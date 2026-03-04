@@ -294,10 +294,10 @@ export class GroundRenderer {
         const x1 = Math.floor(points[rB].x / scale);
         const y1 = Math.floor(points[rB].y / scale);
 
-        // Width from flow accumulation (1–3 pixels), sqrt for gentler ramp
+        // Width from flow accumulation (1–4 pixels), sqrt for gentler ramp
         const flow = Math.max(hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
         const t = Math.sqrt(flow / maxAccum);
-        const width = Math.max(1, Math.min(3, Math.round(1 + t * 2)));
+        const width = t < 0.25 ? 1 : t < 0.50 ? 2 : t < 0.75 ? 3 : 4;
 
         // Color: darker for wider rivers
         const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));

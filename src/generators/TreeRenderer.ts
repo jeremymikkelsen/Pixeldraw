@@ -21,6 +21,7 @@ const OCEAN_FADE_MARGIN = 60;     // match the 60px ocean edge fade
 // Elevation thresholds for tree type blending
 const DECIDUOUS_ONLY_BELOW = 0.48;
 const CONIFER_ONLY_ABOVE = 0.58;
+const SNOW_LINE = 0.80;           // no trees above this elevation
 
 // ---------------------------------------------------------------------------
 // Tree pixel cell types
@@ -286,19 +287,26 @@ export class TreeRenderer {
         }
       }
 
-      // Terrain check: only lowland and highland
+      // Terrain check: lowland, highland, and rock (up to snow line)
       const terrain = topo.terrainType[bestR];
-      if (terrain !== 'lowland' && terrain !== 'highland') continue;
+      if (terrain !== 'lowland' && terrain !== 'highland' && terrain !== 'rock') continue;
+
+      const elev = topo.elevation[bestR];
+      if (elev >= SNOW_LINE) continue;  // above snow line = no trees
 
       // Moisture filter
       const moisture = hydro.moisture[bestR];
       if (moisture < MIN_MOISTURE) continue;
 
-      // Moisture-based thinning (denser forests in wetter areas)
-      if (rng() > moisture * 0.9 + 0.1) continue;
+      // Elevation-based density: sparse at low elevations, dense at mid/high
+      // Remap elevation [0.38..0.80] → density factor [0.2..1.0]
+      const elevDensity = 0.2 + 0.8 * Math.min(1, (elev - 0.38) / (0.70 - 0.38));
 
-      // Determine tree type
-      const elev = topo.elevation[bestR];
+      // Combined thinning: elevation density × moisture
+      const keepChance = elevDensity * (moisture * 0.8 + 0.2);
+      if (rng() > keepChance) continue;
+
+      // Determine tree type (all conifer on rock terrain)
       let isConifer: boolean;
       if (elev < DECIDUOUS_ONLY_BELOW) {
         isConifer = false;

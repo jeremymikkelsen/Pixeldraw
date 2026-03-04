@@ -236,12 +236,12 @@ export class GroundRenderer {
           const moisture = hydro.moisture[regionGrid[i]];
           // Dryness factor: 0 = fully wet, 1 = bone dry
           const dryness = 1 - Math.min(1, moisture / 0.7);
-          if (dryness > 0.1) {
+          if (dryness > 0.05) {
             let r = (baseRGB >> 16) & 0xff;
             let g = (baseRGB >> 8) & 0xff;
             let b = baseRGB & 0xff;
             // Shift toward warm brown/tan: increase red, decrease green/blue
-            const shift = dryness * 0.35;
+            const shift = dryness * 0.55;
             r = Math.min(255, Math.floor(r + (0x8a - r) * shift));
             g = Math.floor(g + (0x7a - g) * shift);
             b = Math.floor(b + (0x50 - b) * shift);

@@ -394,7 +394,7 @@ export class TreeRenderer {
 
         const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
         const t = Math.min(1, (Math.log(flow) - logMin) / logRange);
-        const riverWidth = Math.max(1, Math.ceil(t * 10));
+        const riverWidth = Math.max(1, Math.ceil(t * 6));
         const totalWidth = riverWidth + RIVER_BUFFER * 2;
 
         this._markThickLine(mask, N, x0, y0, x1, y1, totalWidth);

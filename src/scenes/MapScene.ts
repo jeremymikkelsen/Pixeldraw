@@ -3,6 +3,7 @@ import { TopographyGenerator } from '../generators/TopographyGenerator';
 import { GroundRenderer } from '../generators/GroundRenderer';
 import { HydrologyGenerator } from '../generators/HydrologyGenerator';
 import { TreeRenderer } from '../generators/TreeRenderer';
+import { RiverAnimator } from '../generators/RiverAnimator';
 
 const MAP_SIZE = 2048;
 const PIXEL_RESOLUTION = 1024;
@@ -18,6 +19,13 @@ export class MapScene extends Phaser.Scene {
   private plusKey!: Phaser.Input.Keyboard.Key;
   private minusKey!: Phaser.Input.Keyboard.Key;
   private eqKey!: Phaser.Input.Keyboard.Key;
+
+  // Persistent refs for river animation
+  private _pixels!: Uint32Array;
+  private _canvasTex!: Phaser.Textures.CanvasTexture;
+  private _imageData!: ImageData;
+  private _ctx!: CanvasRenderingContext2D;
+  private _riverAnimator!: RiverAnimator;
 
   constructor() {
     super({ key: 'MapScene' });
@@ -49,7 +57,7 @@ export class MapScene extends Phaser.Scene {
     }).setDepth(10).setScrollFactor(0);
   }
 
-  update(_time: number, delta: number): void {
+  update(time: number, delta: number): void {
     const cam = this.cameras.main;
     const dt = delta / 1000;
     const speed = SCROLL_SPEED / cam.zoom;
@@ -63,6 +71,15 @@ export class MapScene extends Phaser.Scene {
     // +/- zoom (numpad plus OR =/+ key)
     if (this.plusKey.isDown || this.eqKey.isDown) cam.zoom = Math.min(MAX_ZOOM, cam.zoom * (1 + ZOOM_SPEED));
     if (this.minusKey.isDown) cam.zoom = Math.max(MIN_ZOOM, cam.zoom * (1 - ZOOM_SPEED));
+
+    // Animate rivers
+    if (this._riverAnimator) {
+      this._riverAnimator.animate(this._pixels, time);
+      new Uint8ClampedArray(this._imageData.data.buffer)
+        .set(new Uint8Array(this._pixels.buffer));
+      this._ctx.putImageData(this._imageData, 0, 0);
+      this._canvasTex.refresh();
+    }
   }
 
   private _generateMap(seed: number): void {
@@ -85,10 +102,18 @@ export class MapScene extends Phaser.Scene {
 
     const renderer = new GroundRenderer();
     const pixels = renderer.render(topo, PIXEL_RESOLUTION);
-    renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
 
+    // Trees (before rivers so river animator can overwrite)
     const treeRenderer = new TreeRenderer();
     treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
+
+    // River animator pre-computes pixel positions; draws first frame
+    const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed);
+    riverAnimator.animate(pixels, 0);
+
+    // Store refs for per-frame animation
+    this._pixels = pixels;
+    this._riverAnimator = riverAnimator;
 
     const texKey = 'topo';
 
@@ -96,14 +121,19 @@ export class MapScene extends Phaser.Scene {
       this.textures.remove(texKey);
     }
 
-    const canvasTex = this.textures.createCanvas(texKey, PIXEL_RESOLUTION, PIXEL_RESOLUTION);
-    const ctx = canvasTex!.context;
+    const canvasTex = this.textures.createCanvas(texKey, PIXEL_RESOLUTION, PIXEL_RESOLUTION)!;
+    const ctx = canvasTex.context;
     const imageData = ctx.createImageData(PIXEL_RESOLUTION, PIXEL_RESOLUTION);
 
     new Uint8ClampedArray(imageData.data.buffer).set(new Uint8Array(pixels.buffer));
 
     ctx.putImageData(imageData, 0, 0);
-    canvasTex!.refresh();
+    canvasTex.refresh();
+
+    // Store for update loop
+    this._canvasTex = canvasTex;
+    this._ctx = ctx;
+    this._imageData = imageData;
 
     if (this.mapSprite) {
       this.mapSprite.setTexture(texKey);

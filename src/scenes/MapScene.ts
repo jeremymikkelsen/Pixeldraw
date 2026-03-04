@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { TopographyGenerator } from '../generators/TopographyGenerator';
 import { GroundRenderer } from '../generators/GroundRenderer';
 import { HydrologyGenerator } from '../generators/HydrologyGenerator';
+import { TreeRenderer } from '../generators/TreeRenderer';
 
 const MAP_SIZE = 2048;
 const PIXEL_RESOLUTION = 1024;
@@ -85,6 +86,9 @@ export class MapScene extends Phaser.Scene {
     const renderer = new GroundRenderer();
     const pixels = renderer.render(topo, PIXEL_RESOLUTION);
     renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
+
+    const treeRenderer = new TreeRenderer();
+    treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
 
     const texKey = 'topo';
 

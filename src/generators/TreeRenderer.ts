@@ -340,7 +340,7 @@ export class TreeRenderer {
         py,
         template: templates[templateIdx],
         palette: palettes[Math.floor(rng() * palettes.length)],
-        flipped: rng() < 0.5,
+        flipped: false,
       });
     }
 

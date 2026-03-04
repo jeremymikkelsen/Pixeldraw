@@ -8,8 +8,8 @@ import { packABGR } from './TerrainPalettes';
 // ---------------------------------------------------------------------------
 const LIGHT_DIR_X = -0.707;
 const LIGHT_DIR_Y = -0.707;
-const MIN_TREE_SPACING = 6;
-const MAX_TREE_SPACING = 14;
+const MIN_TREE_SPACING = 4;
+const MAX_TREE_SPACING = 12;
 const MIN_MOISTURE = 0.15;
 const SHADOW_OFFSET_X = 1;
 const SHADOW_OFFSET_Y = 1;
@@ -299,11 +299,12 @@ export class TreeRenderer {
       if (moisture < MIN_MOISTURE) continue;
 
       // Elevation-based density: sparse at low elevations, dense at mid/high
-      // Remap elevation [0.38..0.80] → density factor [0.2..1.0]
-      const elevDensity = 0.2 + 0.8 * Math.min(1, (elev - 0.38) / (0.70 - 0.38));
+      // Remap elevation [0.38..0.80] → density factor [0.15..1.0]
+      const elevT = Math.min(1, (elev - 0.38) / (0.65 - 0.38));
+      const elevDensity = 0.15 + 0.85 * elevT * elevT;  // quadratic ramp, dense at top
 
       // Combined thinning: elevation density × moisture
-      const keepChance = elevDensity * (moisture * 0.8 + 0.2);
+      const keepChance = elevDensity * (moisture * 0.7 + 0.3);
       if (rng() > keepChance) continue;
 
       // Determine tree type (all conifer on rock terrain)

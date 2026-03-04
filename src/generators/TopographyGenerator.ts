@@ -162,16 +162,22 @@ export class TopographyGenerator {
     const rng = mulberry32(this.seed ^ 0xdeadbeef);
     const noise = createNoise2D(rng);
     const elevation = new Float32Array(numRegions);
-    const cx = this.size / 2;
-    const cy = this.size / 2;
-    const maxDist = Math.sqrt(cx * cx + cy * cy);
+
+    // Conceptual map is MAP_SCALE× larger; we view the centre portion.
+    const MAP_SCALE = 4;
+    const totalSize = this.size * MAP_SCALE;
+    const offset = (totalSize - this.size) / 2;
 
     for (let r = 0; r < numRegions; r++) {
       const { x, y } = points[r];
 
-      // Multi-octave noise
-      const nx = x / this.size - 0.5;
-      const ny = y / this.size - 0.5;
+      // Shift into full-map coordinates
+      const wx = x + offset;
+      const wy = y + offset;
+
+      // Multi-octave noise (scaled to full map)
+      const nx = wx / totalSize - 0.5;
+      const ny = wy / totalSize - 0.5;
       const n =
         0.60 * noise(nx * 2,  ny * 2)  +
         0.25 * noise(nx * 4,  ny * 4)  +
@@ -179,12 +185,12 @@ export class TopographyGenerator {
         0.05 * noise(nx * 16, ny * 16);
       const normalised = (n + 1) / 2; // 0..1
 
-      // Radial falloff — use Chebyshev distance so edges stay ocean
-      const dx = Math.abs(x - cx) / cx;  // 0 at centre, 1 at edge
-      const dy = Math.abs(y - cy) / cy;
-      const dist = Math.max(dx, dy);      // Chebyshev: corners and edges both reach 1
+      // Island mask relative to full map centre
+      const halfTotal = totalSize / 2;
+      const dx = Math.abs(wx - halfTotal) / halfTotal;
+      const dy = Math.abs(wy - halfTotal) / halfTotal;
+      const dist = Math.max(dx, dy);
       const maskNoise = (noise(nx * 1.5, ny * 1.5) + 1) / 2;
-      // Push land inward; maskNoise adds coastline irregularity
       const islandMask = 1 - Math.pow(dist * (1.15 - 0.25 * maskNoise), 2.5);
 
       elevation[r] = Math.max(0, Math.min(1, normalised * 0.45 + islandMask * 0.55));

@@ -8,13 +8,13 @@ import { packABGR } from './TerrainPalettes';
 const MAX_RIVER_WIDTH = 6;
 const RIVER_MIN_FLOW = 25;
 
-// Slope thresholds
-const RAPIDS_SLOPE = 0.03;
-const WATERFALL_SLOPE = 0.06;
+// Slope thresholds (elevation change per pixel)
+const RAPIDS_SLOPE = 0.002;
+const WATERFALL_SLOPE = 0.005;
 
 // Animation speeds (pixels per second along flow direction)
-const CALM_SPEED = 8;
-const RAPIDS_SPEED = 20;
+const CALM_SPEED = 4;
+const RAPIDS_SPEED = 10;
 
 // Wave frequency (higher = tighter highlight bands)
 const WAVE_FREQ = 0.6;
@@ -126,8 +126,10 @@ export class RiverAnimator {
         const flowDirX = fdx / flen;
         const flowDirY = fdy / flen;
 
-        // Segment slope
-        const slope = Math.abs(topo.elevation[rA] - topo.elevation[rB]);
+        // Segment slope (elevation change per pixel distance)
+        const slope = flen > 0
+          ? Math.abs(topo.elevation[rA] - topo.elevation[rB]) / flen
+          : 0;
 
         // Width
         const flow = Math.max(RIVER_MIN_FLOW,

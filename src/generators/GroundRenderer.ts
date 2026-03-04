@@ -281,7 +281,11 @@ export class GroundRenderer {
       packABGR(0x25, 0x5c, 0x80),  // wide rivers
     ];
 
-    const maxAccum = Math.max(1, Math.max(...Array.from(hydro.flowAccumulation)));
+    // Normalize flow in log space: map [RIVER_MIN..maxAccum] → [0..1]
+    const RIVER_MIN = 25;
+    const maxAccum = Math.max(RIVER_MIN + 1, Math.max(...Array.from(hydro.flowAccumulation)));
+    const logMin = Math.log(RIVER_MIN);
+    const logRange = Math.log(maxAccum) - logMin;
 
     for (const path of hydro.rivers) {
       for (let si = 0; si < path.length - 1; si++) {
@@ -294,9 +298,9 @@ export class GroundRenderer {
         const x1 = Math.floor(points[rB].x / scale);
         const y1 = Math.floor(points[rB].y / scale);
 
-        // Width from flow accumulation (1–4 pixels), sqrt for gentler ramp
-        const flow = Math.max(hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
-        const t = Math.sqrt(flow / maxAccum);
+        // Width from flow accumulation (1–4 pixels), log-space normalization
+        const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
+        const t = Math.min(1, (Math.log(flow) - logMin) / logRange);
         const width = t < 0.25 ? 1 : t < 0.50 ? 2 : t < 0.75 ? 3 : 4;
 
         // Color: darker for wider rivers

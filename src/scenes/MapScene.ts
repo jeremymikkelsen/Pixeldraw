@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TopographyGenerator } from '../generators/TopographyGenerator';
 import { GroundRenderer } from '../generators/GroundRenderer';
+import { HydrologyGenerator } from '../generators/HydrologyGenerator';
 
 const MAP_SIZE = 2048;
 const PIXEL_RESOLUTION = 1024;
@@ -65,6 +66,22 @@ export class MapScene extends Phaser.Scene {
 
   private _generateMap(seed: number): void {
     const topo = new TopographyGenerator(MAP_SIZE, seed);
+    const hydro = new HydrologyGenerator(topo, seed);
+
+    console.log('[Hydrology]', {
+      regions: topo.mesh.numRegions,
+      rivers: hydro.rivers.length,
+      longestRiver: hydro.rivers[0]?.length ?? 0,
+      precipRange: [
+        Math.min(...Array.from(hydro.precipitation)),
+        Math.max(...Array.from(hydro.precipitation)),
+      ],
+      moistureRange: [
+        Math.min(...Array.from(hydro.moisture)),
+        Math.max(...Array.from(hydro.moisture)),
+      ],
+    });
+
     const renderer = new GroundRenderer();
     const pixels = renderer.render(topo, PIXEL_RESOLUTION);
 

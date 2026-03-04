@@ -32,9 +32,10 @@ export class MapScene extends Phaser.Scene {
   private _hoveredRegion = -1;
   private _highlightIndices: number[] = [];
 
-  // Moisture overlay
+  // Debug overlays
   private _moistureOverlay!: Uint32Array | null;
-  private _showMoisture = false;
+  private _elevationOverlay!: Uint32Array | null;
+  private _activeOverlay: 'none' | 'moisture' | 'elevation' = 'none';
 
   constructor() {
     super({ key: 'MapScene' });
@@ -58,11 +59,15 @@ export class MapScene extends Phaser.Scene {
     });
 
     this.input.keyboard!.on('keydown-ZERO', () => {
-      this._showMoisture = !this._showMoisture;
+      this._activeOverlay = this._activeOverlay === 'moisture' ? 'none' : 'moisture';
+    });
+
+    this.input.keyboard!.on('keydown-NINE', () => {
+      this._activeOverlay = this._activeOverlay === 'elevation' ? 'none' : 'elevation';
     });
 
     // HUD text (fixed to camera via setScrollFactor)
-    this.add.text(8, 8, 'ARROWS scroll · +/- zoom · SPACE regenerate · 0 moisture', {
+    this.add.text(8, 8, 'ARROWS scroll · +/- zoom · SPACE regenerate · 9 elevation · 0 moisture', {
       fontSize: '13px',
       color: '#ffffff',
       backgroundColor: '#00000088',
@@ -87,10 +92,12 @@ export class MapScene extends Phaser.Scene {
 
     // Animate rivers
     if (this._riverAnimator) {
-      const src = this._showMoisture && this._moistureOverlay
-        ? this._moistureOverlay : this._pixels;
+      const overlayBuf = this._activeOverlay === 'moisture' ? this._moistureOverlay
+        : this._activeOverlay === 'elevation' ? this._elevationOverlay
+        : null;
+      const src = overlayBuf ?? this._pixels;
 
-      if (!this._showMoisture) {
+      if (!overlayBuf) {
         this._riverAnimator.animate(this._pixels, time);
       }
 
@@ -143,6 +150,28 @@ export class MapScene extends Phaser.Scene {
         }
       }
     }
+  }
+
+  private _buildElevationOverlay(
+    topo: TopographyGenerator,
+    regionGrid: Uint16Array | null,
+  ): Uint32Array | null {
+    if (!regionGrid) return null;
+
+    const N = PIXEL_RESOLUTION;
+    const total = N * N;
+    const overlay = new Uint32Array(total);
+
+    // Low (deep green) → high (white) gradient
+    for (let i = 0; i < total; i++) {
+      const e = Math.min(1, Math.max(0, topo.elevation[regionGrid[i]]));
+      const r = Math.floor(0x1a * (1 - e) + 0xff * e);
+      const g = Math.floor(0x4a * (1 - e) + 0xff * e);
+      const b = Math.floor(0x2a * (1 - e) + 0xff * e);
+      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r; // ABGR
+    }
+
+    return overlay;
   }
 
   private _buildMoistureOverlay(
@@ -204,7 +233,8 @@ export class MapScene extends Phaser.Scene {
     this._hoveredRegion = -1;
     this._highlightIndices = [];
     this._moistureOverlay = this._buildMoistureOverlay(hydro, renderer.regionGrid);
-    this._showMoisture = false;
+    this._elevationOverlay = this._buildElevationOverlay(topo, renderer.regionGrid);
+    this._activeOverlay = 'none';
 
     const texKey = 'topo';
 

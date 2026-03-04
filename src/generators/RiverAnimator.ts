@@ -223,20 +223,22 @@ export class RiverAnimator {
 
       let color = CALM_COLORS[rp.widthTier][shadeIdx];
 
-      // Rapids/waterfall foam
+      // Rapids/waterfall foam — sparkles travel downstream, intensity scales with elevation
       if (isRapids) {
-        // Hash-based per-pixel per-frame sparkle
-        const sparkle = fastHash(rp.idx + Math.floor(timeSec * 8)) & 0xff;
-        if (isWaterfall) {
-          // Heavy foam — ~40% of pixels sparkle
-          if (sparkle < 100) {
-            color = sparkle < 50 ? FOAM_BRIGHT : FOAM_COLOR;
-          }
-        } else {
-          // Light rapids foam — ~20% of pixels sparkle
-          if (sparkle < 50) {
-            color = FOAM_COLOR;
-          }
+        // How far above rapids threshold (0 at threshold, 1 at waterfall+)
+        const intensity = Math.min(1,
+          (rp.elevation - RAPIDS_ELEV) / (WATERFALL_ELEV - RAPIDS_ELEV));
+
+        // Flow-aligned sparkle: phase shifts downstream over time
+        const foamPhase = rp.phase * 0.8 - timeSec * RAPIDS_SPEED * 0.7;
+        // Per-pixel spatial jitter so sparkles don't form perfect lines
+        const jitter = fastHash(rp.idx) & 0xff;
+        const sparkle = Math.sin(foamPhase + jitter * 0.05);
+
+        // Higher elevation = lower threshold to show sparkle (more foam)
+        const threshold = 0.7 - intensity * 0.6;  // ranges 0.7 (mild) to 0.1 (heavy)
+        if (sparkle > threshold) {
+          color = (isWaterfall && sparkle > 0.6) ? FOAM_BRIGHT : FOAM_COLOR;
         }
       }
 

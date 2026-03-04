@@ -8,9 +8,9 @@ import { packABGR } from './TerrainPalettes';
 const MAX_RIVER_WIDTH = 6;
 const RIVER_MIN_FLOW = 25;
 
-// Slope thresholds (elevation change per pixel)
-const RAPIDS_SLOPE = 0.002;
-const WATERFALL_SLOPE = 0.005;
+// Elevation thresholds for turbulence (higher = steeper terrain = rapids)
+const RAPIDS_ELEV = 0.55;     // highland and above
+const WATERFALL_ELEV = 0.68;  // near rock terrain
 
 // Animation speeds (pixels per second along flow direction)
 const CALM_SPEED = 4;
@@ -36,7 +36,7 @@ interface RiverPixel {
   idx: number;       // pixel index (y * N + x)
   flowDirX: number;  // normalized flow direction
   flowDirY: number;
-  slope: number;     // elevation change magnitude for this segment
+  elevation: number;  // average elevation of this segment
   widthTier: number; // 0=narrow, 1=mid, 2=wide (for color depth)
   phase: number;     // dot(pos, flowDir) for wave animation
   type: PixelType;
@@ -126,10 +126,8 @@ export class RiverAnimator {
         const flowDirX = fdx / flen;
         const flowDirY = fdy / flen;
 
-        // Segment slope (elevation change per pixel distance)
-        const slope = flen > 0
-          ? Math.abs(topo.elevation[rA] - topo.elevation[rB]) / flen
-          : 0;
+        // Average elevation of segment (used for rapids/waterfall detection)
+        const elevation = (topo.elevation[rA] + topo.elevation[rB]) / 2;
 
         // Width
         const flow = Math.max(RIVER_MIN_FLOW,
@@ -155,12 +153,12 @@ export class RiverAnimator {
             let type = PixelType.Water;
 
             // Rocks in wider calm sections
-            if (width >= 3 && slope < RAPIDS_SLOPE && rng() < ROCK_CHANCE) {
+            if (width >= 3 && elevation < RAPIDS_ELEV && rng() < ROCK_CHANCE) {
               type = PixelType.Rock;
             }
 
             // Logs across narrow rivers (only one per segment)
-            if (!logPlaced && isCenterLine && width <= 3 && slope < RAPIDS_SLOPE
+            if (!logPlaced && isCenterLine && width <= 3 && elevation < RAPIDS_ELEV
                 && rng() < LOG_CHANCE) {
               type = PixelType.Log;
               logPlaced = true;
@@ -175,7 +173,7 @@ export class RiverAnimator {
                   if (!visited[lIdx]) {
                     visited[lIdx] = 1;
                     this._pixels.push({
-                      idx: lIdx, flowDirX, flowDirY, slope, widthTier,
+                      idx: lIdx, flowDirX, flowDirY, elevation, widthTier,
                       phase: lx * flowDirX + ly * flowDirY,
                       type: PixelType.Log,
                     });
@@ -185,7 +183,7 @@ export class RiverAnimator {
             }
 
             this._pixels.push({
-              idx, flowDirX, flowDirY, slope, widthTier, phase, type,
+              idx, flowDirX, flowDirY, elevation, widthTier, phase, type,
             });
           },
         );
@@ -213,9 +211,9 @@ export class RiverAnimator {
         continue;
       }
 
-      // Animated water
-      const isRapids = rp.slope >= RAPIDS_SLOPE;
-      const isWaterfall = rp.slope >= WATERFALL_SLOPE;
+      // Animated water — higher elevation = more turbulent
+      const isRapids = rp.elevation >= RAPIDS_ELEV;
+      const isWaterfall = rp.elevation >= WATERFALL_ELEV;
       const speed = isRapids ? RAPIDS_SPEED : CALM_SPEED;
 
       // Wave phase: highlight bands moving downstream

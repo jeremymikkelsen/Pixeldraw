@@ -13,7 +13,8 @@ const INDEX_TERRAIN: TerrainType[] = [
 // Lighting
 const LIGHT_DIR_X = -0.707;
 const LIGHT_DIR_Y = -0.707;
-const LIGHT_STRENGTH = 4.0;
+const LIGHT_STRENGTH = 3.0;
+const LIGHT_BASE = 0.75;
 const LIGHT_STEPS = 5;
 
 // Border dithering
@@ -229,8 +230,8 @@ export class GroundRenderer {
 
         // 2. Elevation shading (directional light from upper-left)
         const dot = slopeX[i] * LIGHT_DIR_X + slopeY[i] * LIGHT_DIR_Y;
-        let lightFactor = 0.5 + dot * LIGHT_STRENGTH;
-        lightFactor = Math.max(0.25, Math.min(1.0, lightFactor));
+        let lightFactor = LIGHT_BASE + dot * LIGHT_STRENGTH;
+        lightFactor = Math.max(0.35, Math.min(1.0, lightFactor));
         // Quantize for pixel-art stepped shading
         lightFactor = Math.floor(lightFactor * LIGHT_STEPS) / LIGHT_STEPS;
 

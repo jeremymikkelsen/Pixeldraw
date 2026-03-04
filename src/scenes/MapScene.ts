@@ -2,11 +2,19 @@ import Phaser from 'phaser';
 import { TopographyGenerator } from '../generators/TopographyGenerator';
 import { GroundRenderer } from '../generators/GroundRenderer';
 
-const SCENE_SIZE = 1024;
+const MAP_SIZE = 1024;
 const PIXEL_RESOLUTION = 512;
+
+const SCROLL_SPEED = 300;
+const ZOOM_SPEED = 0.03;
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 4;
 
 export class MapScene extends Phaser.Scene {
   private mapSprite!: Phaser.GameObjects.Sprite;
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private plusKey!: Phaser.Input.Keyboard.Key;
+  private minusKey!: Phaser.Input.Keyboard.Key;
 
   constructor() {
     super({ key: 'MapScene' });
@@ -15,26 +23,52 @@ export class MapScene extends Phaser.Scene {
   create(): void {
     this._generateMap(Date.now());
 
+    // Camera setup — allow scrolling over the map
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
+    cam.centerOn(MAP_SIZE / 2, MAP_SIZE / 2);
+
+    // Input
+    this.cursors = this.input.keyboard!.createCursorKeys();
+    this.plusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.PLUS);
+    this.minusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.MINUS);
+
     this.input.keyboard!.on('keydown-SPACE', () => {
       this._generateMap(Date.now());
     });
 
-    this.add.text(8, 8, 'SPACE — regenerate', {
+    // HUD text (fixed to camera via setScrollFactor)
+    this.add.text(8, 8, 'ARROWS scroll · +/- zoom · SPACE regenerate', {
       fontSize: '13px',
       color: '#ffffff',
       backgroundColor: '#00000088',
       padding: { x: 6, y: 4 },
-    }).setDepth(10);
+    }).setDepth(10).setScrollFactor(0);
+  }
+
+  update(_time: number, delta: number): void {
+    const cam = this.cameras.main;
+    const dt = delta / 1000;
+    const speed = SCROLL_SPEED / cam.zoom;
+
+    // Arrow key scrolling
+    if (this.cursors.left.isDown)  cam.scrollX -= speed * dt;
+    if (this.cursors.right.isDown) cam.scrollX += speed * dt;
+    if (this.cursors.up.isDown)    cam.scrollY -= speed * dt;
+    if (this.cursors.down.isDown)  cam.scrollY += speed * dt;
+
+    // +/- zoom
+    if (this.plusKey.isDown)  cam.zoom = Math.min(MAX_ZOOM, cam.zoom * (1 + ZOOM_SPEED));
+    if (this.minusKey.isDown) cam.zoom = Math.max(MIN_ZOOM, cam.zoom * (1 - ZOOM_SPEED));
   }
 
   private _generateMap(seed: number): void {
-    const topo = new TopographyGenerator(SCENE_SIZE, seed);
+    const topo = new TopographyGenerator(MAP_SIZE, seed);
     const renderer = new GroundRenderer();
     const pixels = renderer.render(topo, PIXEL_RESOLUTION);
 
     const texKey = 'topo';
 
-    // Remove previous texture if it exists
     if (this.textures.exists(texKey)) {
       this.textures.remove(texKey);
     }
@@ -43,7 +77,6 @@ export class MapScene extends Phaser.Scene {
     const ctx = canvasTex!.context;
     const imageData = ctx.createImageData(PIXEL_RESOLUTION, PIXEL_RESOLUTION);
 
-    // Copy Uint32 pixel data into ImageData
     new Uint8ClampedArray(imageData.data.buffer).set(new Uint8Array(pixels.buffer));
 
     ctx.putImageData(imageData, 0, 0);
@@ -52,8 +85,8 @@ export class MapScene extends Phaser.Scene {
     if (this.mapSprite) {
       this.mapSprite.setTexture(texKey);
     } else {
-      this.mapSprite = this.add.sprite(SCENE_SIZE / 2, SCENE_SIZE / 2, texKey);
-      this.mapSprite.setDisplaySize(SCENE_SIZE, SCENE_SIZE);
+      this.mapSprite = this.add.sprite(MAP_SIZE / 2, MAP_SIZE / 2, texKey);
+      this.mapSprite.setDisplaySize(MAP_SIZE, MAP_SIZE);
     }
   }
 }

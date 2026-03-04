@@ -193,7 +193,16 @@ export class TopographyGenerator {
       const maskNoise = (noise(nx * 1.5, ny * 1.5) + 1) / 2;
       const islandMask = 1 - Math.pow(dist * (1.15 - 0.25 * maskNoise), 2.5);
 
-      elevation[r] = Math.max(0, Math.min(1, normalised * 0.45 + islandMask * 0.55));
+      let e = Math.max(0, Math.min(1, normalised * 0.45 + islandMask * 0.55));
+
+      // Force ocean at map edges — smooth fade over outer 60px
+      const edgeDist = Math.min(x, y, this.size - x, this.size - y);
+      const EDGE_FADE = 60;
+      if (edgeDist < EDGE_FADE) {
+        e *= Math.max(0, edgeDist / EDGE_FADE);
+      }
+
+      elevation[r] = e;
     }
 
     return elevation;

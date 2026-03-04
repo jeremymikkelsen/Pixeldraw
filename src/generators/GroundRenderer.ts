@@ -298,10 +298,10 @@ export class GroundRenderer {
         const x1 = Math.floor(points[rB].x / scale);
         const y1 = Math.floor(points[rB].y / scale);
 
-        // Width from flow accumulation (1–4 pixels), log-space normalization
+        // Width from flow accumulation (1–10 pixels), log-space normalization, 10% steps
         const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
         const t = Math.min(1, (Math.log(flow) - logMin) / logRange);
-        const width = t < 0.25 ? 1 : t < 0.50 ? 2 : t < 0.75 ? 3 : 4;
+        const width = Math.max(1, Math.ceil(t * 10));
 
         // Color: darker for wider rivers
         const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));

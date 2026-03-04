@@ -15,6 +15,7 @@ export class MapScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private plusKey!: Phaser.Input.Keyboard.Key;
   private minusKey!: Phaser.Input.Keyboard.Key;
+  private eqKey!: Phaser.Input.Keyboard.Key;
 
   constructor() {
     super({ key: 'MapScene' });
@@ -23,15 +24,15 @@ export class MapScene extends Phaser.Scene {
   create(): void {
     this._generateMap(Date.now());
 
-    // Camera setup — allow scrolling over the map
+    // Camera setup
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
     cam.centerOn(MAP_SIZE / 2, MAP_SIZE / 2);
 
-    // Input
+    // Input — use =/- keys (regular keyboard, not numpad-only)
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.plusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.PLUS);
     this.minusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.MINUS);
+    this.eqKey = this.input.keyboard!.addKey(187);  // =/+ key on US keyboards
 
     this.input.keyboard!.on('keydown-SPACE', () => {
       this._generateMap(Date.now());
@@ -57,8 +58,8 @@ export class MapScene extends Phaser.Scene {
     if (this.cursors.up.isDown)    cam.scrollY -= speed * dt;
     if (this.cursors.down.isDown)  cam.scrollY += speed * dt;
 
-    // +/- zoom
-    if (this.plusKey.isDown)  cam.zoom = Math.min(MAX_ZOOM, cam.zoom * (1 + ZOOM_SPEED));
+    // +/- zoom (numpad plus OR =/+ key)
+    if (this.plusKey.isDown || this.eqKey.isDown) cam.zoom = Math.min(MAX_ZOOM, cam.zoom * (1 + ZOOM_SPEED));
     if (this.minusKey.isDown) cam.zoom = Math.max(MIN_ZOOM, cam.zoom * (1 - ZOOM_SPEED));
   }
 

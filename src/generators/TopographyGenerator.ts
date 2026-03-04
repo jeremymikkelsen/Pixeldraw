@@ -47,7 +47,7 @@ const TERRAIN_COLORS: Record<TerrainType, number> = {
 // ---------------------------------------------------------------------------
 // TopographyGenerator
 // ---------------------------------------------------------------------------
-export const MAP_SCALE = 4;
+export const MAP_SCALE = 1;
 
 export class TopographyGenerator {
   readonly size: number;

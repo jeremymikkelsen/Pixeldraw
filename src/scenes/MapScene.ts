@@ -27,6 +27,11 @@ export class MapScene extends Phaser.Scene {
   private _ctx!: CanvasRenderingContext2D;
   private _riverAnimator!: RiverAnimator;
 
+  // Region hover highlight
+  private _regionGrid!: Uint16Array | null;
+  private _hoveredRegion = -1;
+  private _highlightIndices: number[] = [];
+
   constructor() {
     super({ key: 'MapScene' });
   }
@@ -77,8 +82,52 @@ export class MapScene extends Phaser.Scene {
       this._riverAnimator.animate(this._pixels, time);
       new Uint8ClampedArray(this._imageData.data.buffer)
         .set(new Uint8Array(this._pixels.buffer));
+
+      // Region hover highlight
+      this._updateHoveredRegion();
+      if (this._highlightIndices.length > 0) {
+        const data = this._imageData.data;
+        for (let k = 0; k < this._highlightIndices.length; k++) {
+          const off = this._highlightIndices[k] << 2;
+          data[off]     = Math.min(255, data[off]     + 25);
+          data[off + 1] = Math.min(255, data[off + 1] + 25);
+          data[off + 2] = Math.min(255, data[off + 2] + 25);
+        }
+      }
+
       this._ctx.putImageData(this._imageData, 0, 0);
       this._canvasTex.refresh();
+    }
+  }
+
+  private _updateHoveredRegion(): void {
+    if (!this._regionGrid) return;
+
+    const pointer = this.input.activePointer;
+    const cam = this.cameras.main;
+    const worldX = pointer.worldX;
+    const worldY = pointer.worldY;
+
+    // World coords → pixel coords
+    const scale = MAP_SIZE / PIXEL_RESOLUTION;
+    const px = Math.floor(worldX / scale);
+    const py = Math.floor(worldY / scale);
+
+    let region = -1;
+    if (px >= 0 && px < PIXEL_RESOLUTION && py >= 0 && py < PIXEL_RESOLUTION) {
+      region = this._regionGrid[py * PIXEL_RESOLUTION + px];
+    }
+
+    if (region !== this._hoveredRegion) {
+      this._hoveredRegion = region;
+      this._highlightIndices = [];
+      if (region >= 0) {
+        const grid = this._regionGrid;
+        const total = PIXEL_RESOLUTION * PIXEL_RESOLUTION;
+        for (let i = 0; i < total; i++) {
+          if (grid[i] === region) this._highlightIndices.push(i);
+        }
+      }
     }
   }
 
@@ -114,6 +163,9 @@ export class MapScene extends Phaser.Scene {
     // Store refs for per-frame animation
     this._pixels = pixels;
     this._riverAnimator = riverAnimator;
+    this._regionGrid = renderer.regionGrid;
+    this._hoveredRegion = -1;
+    this._highlightIndices = [];
 
     const texKey = 'topo';
 

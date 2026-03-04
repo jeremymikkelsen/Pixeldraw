@@ -22,6 +22,7 @@ const LIGHT_STEPS = 5;
 const DITHER_RANGE = 6;
 
 export class GroundRenderer {
+  regionGrid: Uint16Array | null = null;
 
   render(topo: TopographyGenerator, resolution: number, hydro?: HydrologyGenerator): Uint32Array {
     const { size, seed, mesh, terrainType: regionTerrain } = topo;
@@ -114,6 +115,8 @@ export class GroundRenderer {
         elevationGrid[i] = Math.max(0, Math.min(1, normalised * 0.45 + islandMask * 0.55));
       }
     }
+
+    this.regionGrid = regionGrid;
 
     // ------------------------------------------------------------------
     // Phase 1B: Slope via central differences

@@ -11,16 +11,16 @@ const LIGHT_DIR_Y = -0.707;
 const MIN_TREE_SPACING = 6;
 const MAX_TREE_SPACING = 14;
 const MIN_MOISTURE = 0.15;
-const SHADOW_OFFSET_X = 2;
-const SHADOW_OFFSET_Y = 2;
+const SHADOW_OFFSET_X = 1;
+const SHADOW_OFFSET_Y = 1;
 const SHADOW_DARKEN = 0.55;
 const RIVER_BUFFER = 4;           // extra pixels around rivers to avoid
 const EDGE_MARGIN = 8;
 const OCEAN_FADE_MARGIN = 60;     // match the 60px ocean edge fade
 
 // Elevation thresholds for tree type blending
-const DECIDUOUS_ONLY_BELOW = 0.48;
-const CONIFER_ONLY_ABOVE = 0.58;
+const DECIDUOUS_ONLY_BELOW = 0.42;
+const CONIFER_ONLY_ABOVE = 0.50;
 const SNOW_LINE = 0.80;           // no trees above this elevation
 
 // ---------------------------------------------------------------------------

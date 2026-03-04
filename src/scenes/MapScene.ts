@@ -2,8 +2,8 @@ import Phaser from 'phaser';
 import { TopographyGenerator } from '../generators/TopographyGenerator';
 import { GroundRenderer } from '../generators/GroundRenderer';
 
-const MAP_SIZE = 1024;
-const PIXEL_RESOLUTION = 512;
+const MAP_SIZE = 2048;
+const PIXEL_RESOLUTION = 1024;
 
 const SCROLL_SPEED = 300;
 const ZOOM_SPEED = 0.03;

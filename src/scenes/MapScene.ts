@@ -84,6 +84,7 @@ export class MapScene extends Phaser.Scene {
 
     const renderer = new GroundRenderer();
     const pixels = renderer.render(topo, PIXEL_RESOLUTION);
+    renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
 
     const texKey = 'topo';
 

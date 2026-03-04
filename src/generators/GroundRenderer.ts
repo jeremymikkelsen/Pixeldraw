@@ -1,6 +1,7 @@
 import { createNoise2D } from 'simplex-noise';
 import { TopographyGenerator, TerrainType, mulberry32, MAP_SCALE } from './TopographyGenerator';
-import { PALETTES, BAYER_4X4, applyBrightness } from './TerrainPalettes';
+import { HydrologyGenerator } from './HydrologyGenerator';
+import { PALETTES, BAYER_4X4, applyBrightness, packABGR } from './TerrainPalettes';
 
 // Terrain type ↔ integer index for typed-array storage
 const TERRAIN_INDEX: Record<TerrainType, number> = {
@@ -256,5 +257,88 @@ export class GroundRenderer {
     }
 
     return pixels;
+  }
+
+  /**
+   * Draw rivers onto an existing pixel buffer.
+   * Uses Bresenham thick lines between region centers along each river path,
+   * with width scaled by log(flowAccumulation).
+   */
+  renderRivers(
+    pixels: Uint32Array,
+    topo: TopographyGenerator,
+    hydro: HydrologyGenerator,
+    resolution: number,
+  ): void {
+    const { points } = topo.mesh;
+    const scale = topo.size / resolution;
+    const N = resolution;
+
+    // River color palette: darker = deeper/wider
+    const RIVER_COLORS = [
+      packABGR(0x2a, 0x70, 0x90),  // narrow streams
+      packABGR(0x28, 0x65, 0x88),
+      packABGR(0x25, 0x5c, 0x80),  // wide rivers
+    ];
+
+    const maxAccum = Math.max(1, Math.max(...Array.from(hydro.flowAccumulation)));
+    const logMax = Math.log(1 + maxAccum);
+
+    for (const path of hydro.rivers) {
+      for (let si = 0; si < path.length - 1; si++) {
+        const rA = path[si];
+        const rB = path[si + 1];
+
+        // World coords → pixel coords
+        const x0 = Math.floor(points[rA].x / scale);
+        const y0 = Math.floor(points[rA].y / scale);
+        const x1 = Math.floor(points[rB].x / scale);
+        const y1 = Math.floor(points[rB].y / scale);
+
+        // Width from flow accumulation (1–4 pixels)
+        const flow = Math.max(hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
+        const logFlow = Math.log(1 + flow) / logMax;
+        const width = Math.max(1, Math.min(4, Math.round(1 + logFlow * 3)));
+
+        // Color: darker for wider rivers
+        const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(logFlow * RIVER_COLORS.length));
+        const color = RIVER_COLORS[ci];
+
+        // Bresenham line with thickness
+        this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color);
+      }
+    }
+  }
+
+  private _drawThickLine(
+    pixels: Uint32Array, N: number,
+    x0: number, y0: number, x1: number, y1: number,
+    width: number, color: number,
+  ): void {
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+    let cx = x0, cy = y0;
+    const r = (width - 1) >> 1; // half-width for stamping
+
+    while (true) {
+      // Stamp a filled square of radius r
+      for (let oy = -r; oy <= r; oy++) {
+        const py = cy + oy;
+        if (py < 0 || py >= N) continue;
+        for (let ox = -r; ox <= r; ox++) {
+          const px = cx + ox;
+          if (px < 0 || px >= N) continue;
+          pixels[py * N + px] = color;
+        }
+      }
+
+      if (cx === x1 && cy === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; cx += sx; }
+      if (e2 < dx)  { err += dx; cy += sy; }
+    }
   }
 }

@@ -32,6 +32,10 @@ export class MapScene extends Phaser.Scene {
   private _hoveredRegion = -1;
   private _highlightIndices: number[] = [];
 
+  // Moisture overlay
+  private _moistureOverlay!: Uint32Array | null;
+  private _showMoisture = false;
+
   constructor() {
     super({ key: 'MapScene' });
   }
@@ -53,8 +57,12 @@ export class MapScene extends Phaser.Scene {
       this._generateMap(Date.now());
     });
 
+    this.input.keyboard!.on('keydown-ZERO', () => {
+      this._showMoisture = !this._showMoisture;
+    });
+
     // HUD text (fixed to camera via setScrollFactor)
-    this.add.text(8, 8, 'ARROWS scroll · +/- zoom · SPACE regenerate', {
+    this.add.text(8, 8, 'ARROWS scroll · +/- zoom · SPACE regenerate · 0 moisture', {
       fontSize: '13px',
       color: '#ffffff',
       backgroundColor: '#00000088',
@@ -79,9 +87,15 @@ export class MapScene extends Phaser.Scene {
 
     // Animate rivers
     if (this._riverAnimator) {
-      this._riverAnimator.animate(this._pixels, time);
+      const src = this._showMoisture && this._moistureOverlay
+        ? this._moistureOverlay : this._pixels;
+
+      if (!this._showMoisture) {
+        this._riverAnimator.animate(this._pixels, time);
+      }
+
       new Uint8ClampedArray(this._imageData.data.buffer)
-        .set(new Uint8Array(this._pixels.buffer));
+        .set(new Uint8Array(src.buffer));
 
       // Region hover highlight
       this._updateHoveredRegion();
@@ -131,6 +145,29 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
+  private _buildMoistureOverlay(
+    hydro: HydrologyGenerator,
+    regionGrid: Uint16Array | null,
+  ): Uint32Array | null {
+    if (!regionGrid) return null;
+
+    const N = PIXEL_RESOLUTION;
+    const total = N * N;
+    const overlay = new Uint32Array(total);
+
+    // Dry (brown) → wet (blue) gradient
+    // t=0 (dry): warm brown  t=1 (wet): deep blue
+    for (let i = 0; i < total; i++) {
+      const m = Math.min(1, Math.max(0, hydro.moisture[regionGrid[i]]));
+      const r = Math.floor(0x8a * (1 - m) + 0x20 * m);
+      const g = Math.floor(0x70 * (1 - m) + 0x40 * m);
+      const b = Math.floor(0x3a * (1 - m) + 0x90 * m);
+      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r; // ABGR
+    }
+
+    return overlay;
+  }
+
   private _generateMap(seed: number): void {
     const topo = new TopographyGenerator(MAP_SIZE, seed);
     const hydro = new HydrologyGenerator(topo, seed);
@@ -166,6 +203,8 @@ export class MapScene extends Phaser.Scene {
     this._regionGrid = renderer.regionGrid;
     this._hoveredRegion = -1;
     this._highlightIndices = [];
+    this._moistureOverlay = this._buildMoistureOverlay(hydro, renderer.regionGrid);
+    this._showMoisture = false;
 
     const texKey = 'topo';
 

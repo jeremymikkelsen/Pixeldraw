@@ -23,7 +23,7 @@ const DITHER_RANGE = 6;
 
 export class GroundRenderer {
 
-  render(topo: TopographyGenerator, resolution: number): Uint32Array {
+  render(topo: TopographyGenerator, resolution: number, hydro?: HydrologyGenerator): Uint32Array {
     const { size, seed, mesh, terrainType: regionTerrain } = topo;
     const { points } = mesh;
     const numRegions = mesh.numRegions;
@@ -64,6 +64,7 @@ export class GroundRenderer {
     // ------------------------------------------------------------------
     const terrainGrid = new Uint8Array(totalPixels);
     const elevationGrid = new Float32Array(totalPixels);
+    const regionGrid = hydro ? new Uint16Array(totalPixels) : null;
 
     for (let py = 0; py < N; py++) {
       const wy = (py + 0.5) * scale;
@@ -90,6 +91,7 @@ export class GroundRenderer {
         }
 
         terrainGrid[i] = TERRAIN_INDEX[regionTerrain[bestR]];
+        if (regionGrid) regionGrid[i] = bestR;
 
         // Per-pixel elevation (same formula as TopographyGenerator._computeElevation)
         const fmx = wx + offset;
@@ -229,7 +231,26 @@ export class GroundRenderer {
         );
         let baseRGB = palette.base[palIdx];
 
-        // 2. Elevation shading (directional light from upper-left)
+        // 2. Moisture tinting (dry = shift toward brown/yellow, wet = richer green)
+        if (hydro && regionGrid && (terrain === 'lowland' || terrain === 'highland' || terrain === 'coast')) {
+          const moisture = hydro.moisture[regionGrid[i]];
+          // Dryness factor: 0 = fully wet, 1 = bone dry
+          const dryness = 1 - Math.min(1, moisture / 0.7);
+          if (dryness > 0.1) {
+            let r = (baseRGB >> 16) & 0xff;
+            let g = (baseRGB >> 8) & 0xff;
+            let b = baseRGB & 0xff;
+            // Shift toward warm brown/tan: increase red, decrease green/blue
+            const shift = dryness * 0.35;
+            r = Math.min(255, Math.floor(r + (0x8a - r) * shift));
+            g = Math.floor(g + (0x7a - g) * shift);
+            b = Math.floor(b + (0x50 - b) * shift);
+            baseRGB = (r << 16) | (g << 8) | b;
+          }
+        }
+
+        // 3. Elevation shading (directional light from upper-left)
+        // (moisture tinting applied above in step 2)
         const dot = slopeX[i] * LIGHT_DIR_X + slopeY[i] * LIGHT_DIR_Y;
         let lightFactor = LIGHT_BASE + dot * LIGHT_STRENGTH;
         lightFactor = Math.max(0.35, Math.min(1.0, lightFactor));

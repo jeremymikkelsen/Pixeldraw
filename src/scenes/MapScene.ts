@@ -101,7 +101,7 @@ export class MapScene extends Phaser.Scene {
     });
 
     const renderer = new GroundRenderer();
-    const pixels = renderer.render(topo, PIXEL_RESOLUTION);
+    const pixels = renderer.render(topo, PIXEL_RESOLUTION, hydro);
 
     // Trees (before rivers so river animator can overwrite)
     const treeRenderer = new TreeRenderer();

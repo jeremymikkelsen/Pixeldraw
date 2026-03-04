@@ -19,7 +19,7 @@ import { DualMesh, Point } from './DualMesh';
 // ---------------------------------------------------------------------------
 // Seeded PRNG (Mulberry32) — returns a () => number factory
 // ---------------------------------------------------------------------------
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
     s += 0x6d2b79f5;
@@ -47,13 +47,15 @@ const TERRAIN_COLORS: Record<TerrainType, number> = {
 // ---------------------------------------------------------------------------
 // TopographyGenerator
 // ---------------------------------------------------------------------------
-export class TopographyGenerator {
-  private readonly size: number;
-  private readonly seed: number;
+export const MAP_SCALE = 4;
 
-  private mesh!: DualMesh;
-  private elevation!: Float32Array;    // per region, 0..1
-  private terrainType!: TerrainType[]; // per region
+export class TopographyGenerator {
+  readonly size: number;
+  readonly seed: number;
+
+  readonly mesh!: DualMesh;
+  readonly elevation!: Float32Array;    // per region, 0..1
+  readonly terrainType!: TerrainType[]; // per region
 
   constructor(size: number, seed: number) {
     this.size = size;
@@ -123,9 +125,9 @@ export class TopographyGenerator {
   // -------------------------------------------------------------------------
   private _build(): void {
     const points = this._samplePoints();
-    this.mesh = new DualMesh(points);
-    this.elevation = this._computeElevation();
-    this.terrainType = this._classifyTerrain();
+    (this as any).mesh = new DualMesh(points);
+    (this as any).elevation = this._computeElevation();
+    (this as any).terrainType = this._classifyTerrain();
   }
 
   private _samplePoints(): Point[] {
@@ -163,8 +165,6 @@ export class TopographyGenerator {
     const noise = createNoise2D(rng);
     const elevation = new Float32Array(numRegions);
 
-    // Conceptual map is MAP_SCALE× larger; we view the centre portion.
-    const MAP_SCALE = 4;
     const totalSize = this.size * MAP_SCALE;
     const offset = (totalSize - this.size) / 2;
 

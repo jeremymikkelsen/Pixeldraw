@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
 import { TopographyGenerator } from '../generators/TopographyGenerator';
+import { GroundRenderer } from '../generators/GroundRenderer';
 
 const SCENE_SIZE = 1024;
-const PIXEL_RESOLUTION = 256;
+const PIXEL_RESOLUTION = 512;
 
 export class MapScene extends Phaser.Scene {
   private mapSprite!: Phaser.GameObjects.Sprite;
@@ -28,7 +29,8 @@ export class MapScene extends Phaser.Scene {
 
   private _generateMap(seed: number): void {
     const topo = new TopographyGenerator(SCENE_SIZE, seed);
-    const pixels = topo.rasterize(PIXEL_RESOLUTION);
+    const renderer = new GroundRenderer();
+    const pixels = renderer.render(topo, PIXEL_RESOLUTION);
 
     const texKey = 'topo';
 

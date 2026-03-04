@@ -425,8 +425,8 @@ export class HydrologyGenerator {
         path.push(r);
         r = flowDir[r];
       }
-      // Include mouth (first water region)
-      if (r !== -1 && isWater(terrain[r])) {
+      // Include junction (where tributary meets main river) or mouth (water)
+      if (r !== -1) {
         path.push(r);
       }
       if (path.length >= 2) rivers.push(path);

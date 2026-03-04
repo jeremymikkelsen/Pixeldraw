@@ -282,7 +282,6 @@ export class GroundRenderer {
     ];
 
     const maxAccum = Math.max(1, Math.max(...Array.from(hydro.flowAccumulation)));
-    const logMax = Math.log(1 + maxAccum);
 
     for (const path of hydro.rivers) {
       for (let si = 0; si < path.length - 1; si++) {
@@ -295,13 +294,13 @@ export class GroundRenderer {
         const x1 = Math.floor(points[rB].x / scale);
         const y1 = Math.floor(points[rB].y / scale);
 
-        // Width from flow accumulation (1–4 pixels)
+        // Width from flow accumulation (1–3 pixels), sqrt for gentler ramp
         const flow = Math.max(hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
-        const logFlow = Math.log(1 + flow) / logMax;
-        const width = Math.max(1, Math.min(4, Math.round(1 + logFlow * 3)));
+        const t = Math.sqrt(flow / maxAccum);
+        const width = Math.max(1, Math.min(3, Math.round(1 + t * 2)));
 
         // Color: darker for wider rivers
-        const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(logFlow * RIVER_COLORS.length));
+        const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));
         const color = RIVER_COLORS[ci];
 
         // Bresenham line with thickness

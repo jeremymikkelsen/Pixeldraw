@@ -18,7 +18,7 @@ import { DualMesh, Point } from './DualMesh';
 const BASE_MOISTURE = 1.0;
 const OCEAN_RECHARGE = 0.06;
 const UPLIFT_FACTOR = 12.0;
-const BASE_PRECIP_RATE = 0.005;
+const BASE_PRECIP_RATE = 0.04;
 const ELEV_CURVE_EXP = 2.2; // must match TopographyGenerator pow() exponent
 
 // -- River extraction --
@@ -88,6 +88,7 @@ function isWater(t: TerrainType): boolean {
 // ---------------------------------------------------------------------------
 export class HydrologyGenerator {
   readonly precipitation!: Float32Array;
+  readonly airMoisture!: Float32Array;
   readonly flowDirection!: Int32Array;
   readonly flowAccumulation!: Float32Array;
   readonly moisture!: Float32Array;
@@ -131,6 +132,7 @@ export class HydrologyGenerator {
     );
 
     (this as any).precipitation = precipitation;
+    (this as any).airMoisture = airMoisture;
     (this as any).flowDirection = flowDirection;
     (this as any).flowAccumulation = flowAccumulation;
     (this as any).moisture = moisture;
@@ -239,9 +241,6 @@ export class HydrologyGenerator {
         continue;
       }
 
-      // Snapshot air moisture BEFORE extraction — this is the rain shadow signal
-      airMoistureSnapshot[r] = airMoist[r];
-
       // Orographic uplift: use pre-curve elevation so lowland gradients aren't crushed
       const rawElev = Math.pow(elevation[r], 1 / ELEV_CURVE_EXP);
       let avgWestElev = 0;
@@ -262,6 +261,9 @@ export class HydrologyGenerator {
 
       precipitation[r] = precipAmount;
       airMoist[r] = Math.max(0.01, airMoist[r] - precipAmount);
+
+      // Snapshot AFTER extraction — shows depleted air east of mountains
+      airMoistureSnapshot[r] = airMoist[r];
     }
 
     // Normalize precipitation to [0..1] (for river generation)

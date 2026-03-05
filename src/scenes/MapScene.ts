@@ -35,7 +35,8 @@ export class MapScene extends Phaser.Scene {
   // Debug overlays
   private _moistureOverlay!: Uint32Array | null;
   private _elevationOverlay!: Uint32Array | null;
-  private _activeOverlay: 'none' | 'moisture' | 'elevation' = 'none';
+  private _airMoistureOverlay!: Uint32Array | null;
+  private _activeOverlay: 'none' | 'moisture' | 'elevation' | 'airMoisture' = 'none';
 
   // Touch/mobile state
   private _isTouchDevice = false;
@@ -75,6 +76,10 @@ export class MapScene extends Phaser.Scene {
       this._activeOverlay = this._activeOverlay === 'elevation' ? 'none' : 'elevation';
     });
 
+    this.input.keyboard!.on('keydown-EIGHT', () => {
+      this._activeOverlay = this._activeOverlay === 'airMoisture' ? 'none' : 'airMoisture';
+    });
+
     // Touch / mobile support
     this._isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     this._setupTouchControls();
@@ -110,6 +115,7 @@ export class MapScene extends Phaser.Scene {
     if (this._riverAnimator) {
       const overlayBuf = this._activeOverlay === 'moisture' ? this._moistureOverlay
         : this._activeOverlay === 'elevation' ? this._elevationOverlay
+        : this._activeOverlay === 'airMoisture' ? this._airMoistureOverlay
         : null;
       const src = overlayBuf ?? this._pixels;
 
@@ -286,6 +292,28 @@ export class MapScene extends Phaser.Scene {
     return overlay;
   }
 
+  private _buildAirMoistureOverlay(
+    hydro: HydrologyGenerator,
+    regionGrid: Uint16Array | null,
+  ): Uint32Array | null {
+    if (!regionGrid) return null;
+
+    const N = PIXEL_RESOLUTION;
+    const total = N * N;
+    const overlay = new Uint32Array(total);
+
+    // Cyan (high air moisture) → red (depleted) gradient
+    for (let i = 0; i < total; i++) {
+      const m = Math.min(1, Math.max(0, hydro.airMoisture[regionGrid[i]]));
+      const r = Math.floor(0xd0 * (1 - m) + 0x10 * m);
+      const g = Math.floor(0x20 * (1 - m) + 0xb0 * m);
+      const b = Math.floor(0x20 * (1 - m) + 0xd0 * m);
+      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r; // ABGR
+    }
+
+    return overlay;
+  }
+
   private _generateMap(seed: number): void {
     const topo = new TopographyGenerator(MAP_SIZE, seed);
     const hydro = new HydrologyGenerator(topo, seed);
@@ -323,6 +351,7 @@ export class MapScene extends Phaser.Scene {
     this._highlightIndices = [];
     this._moistureOverlay = this._buildMoistureOverlay(hydro, renderer.regionGrid);
     this._elevationOverlay = this._buildElevationOverlay(topo, renderer.regionGrid);
+    this._airMoistureOverlay = this._buildAirMoistureOverlay(hydro, renderer.regionGrid);
     this._activeOverlay = 'none';
 
     const texKey = 'topo';

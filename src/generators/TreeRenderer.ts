@@ -19,8 +19,11 @@ const EDGE_MARGIN = 8;
 const OCEAN_FADE_MARGIN = 60;     // match the 60px ocean edge fade
 
 // Elevation thresholds for tree type blending (adjusted for pow(2.2) elevation curve)
-const DECIDUOUS_ONLY_BELOW = 0.20;
-const CONIFER_ONLY_ABOVE = 0.27;
+// Lowland (< 0.25): sparse plains with occasional deciduous
+// Highland (0.25–0.45): dense deciduous forest
+// Rock (0.45–0.61): dense conifer forest up to treeline
+const DECIDUOUS_ONLY_BELOW = 0.40;
+const CONIFER_ONLY_ABOVE = 0.48;
 const SNOW_LINE = 0.61;           // no trees above this elevation
 
 // ---------------------------------------------------------------------------
@@ -298,10 +301,22 @@ export class TreeRenderer {
       const moisture = hydro.moisture[bestR];
       if (moisture < MIN_MOISTURE) continue;
 
-      // Elevation-based density: dense in lowlands, thinning toward treeline
-      // Remap elevation [0.12..0.61] → density factor [1.0..0.15]
-      const elevT = Math.min(1, (elev - 0.12) / (SNOW_LINE - 0.12));
-      const elevDensity = 1.0 - 0.85 * elevT * elevT;  // quadratic falloff, dense at bottom
+      // Elevation-based density:
+      //   Lowland (< 0.25): sparse plains, ~10% keep for occasional trees
+      //   Highland (0.25–0.45): dense deciduous forest, ramps up quickly
+      //   Rock (0.45–SNOW_LINE): dense conifers right up to treeline
+      let elevDensity: number;
+      if (elev < 0.25) {
+        // Plains: very sparse, scattered trees
+        elevDensity = 0.10;
+      } else if (elev < 0.30) {
+        // Transition: ramp from sparse to dense
+        const t = (elev - 0.25) / 0.05;
+        elevDensity = 0.10 + 0.85 * t;
+      } else {
+        // Dense forest from highland through rock, right up to treeline
+        elevDensity = 0.95;
+      }
 
       // Combined thinning: elevation density × moisture
       const keepChance = elevDensity * (moisture * 0.7 + 0.3);

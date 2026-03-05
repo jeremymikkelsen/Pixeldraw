@@ -17,8 +17,9 @@ import { DualMesh, Point } from './DualMesh';
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
 const OCEAN_RECHARGE = 0.06;
-const UPLIFT_FACTOR = 6.0;
-const BASE_PRECIP_RATE = 0.08;
+const UPLIFT_FACTOR = 10.0;
+const BASE_PRECIP_RATE = 0.03;
+const ELEV_CURVE_EXP = 2.2; // must match TopographyGenerator pow() exponent
 
 // -- River extraction --
 const RIVER_THRESHOLD = 25;
@@ -236,22 +237,23 @@ export class HydrologyGenerator {
         continue;
       }
 
-      // Orographic uplift: compare elevation to western neighbors
+      // Orographic uplift: use pre-curve elevation so lowland gradients aren't crushed
+      const rawElev = Math.pow(elevation[r], 1 / ELEV_CURVE_EXP);
       let avgWestElev = 0;
       let westCount = 0;
       for (let ni = 0; ni < neighbors.length; ni++) {
         const n = neighbors[ni];
         if (points[n].x < points[r].x) {
-          avgWestElev += elevation[n];
+          avgWestElev += Math.pow(elevation[n], 1 / ELEV_CURVE_EXP);
           westCount++;
         }
       }
       if (westCount > 0) avgWestElev /= westCount;
 
-      const elevGain = Math.max(0, elevation[r] - avgWestElev);
+      const elevGain = Math.max(0, rawElev - avgWestElev);
       const precipRate = BASE_PRECIP_RATE + elevGain * UPLIFT_FACTOR;
       let precipAmount = airMoisture[r] * precipRate;
-      precipAmount = Math.min(precipAmount, airMoisture[r] * 0.9);
+      precipAmount = Math.min(precipAmount, airMoisture[r] * 0.7);
 
       precipitation[r] = precipAmount;
       airMoisture[r] = Math.max(0.01, airMoisture[r] - precipAmount);

@@ -18,10 +18,10 @@ const RIVER_BUFFER = 4;           // extra pixels around rivers to avoid
 const EDGE_MARGIN = 8;
 const OCEAN_FADE_MARGIN = 60;     // match the 60px ocean edge fade
 
-// Elevation thresholds for tree type blending
-const DECIDUOUS_ONLY_BELOW = 0.48;
-const CONIFER_ONLY_ABOVE = 0.56;
-const SNOW_LINE = 0.80;           // no trees above this elevation
+// Elevation thresholds for tree type blending (adjusted for pow(2.2) elevation curve)
+const DECIDUOUS_ONLY_BELOW = 0.20;
+const CONIFER_ONLY_ABOVE = 0.27;
+const SNOW_LINE = 0.61;           // no trees above this elevation
 
 // ---------------------------------------------------------------------------
 // Tree pixel cell types
@@ -299,8 +299,8 @@ export class TreeRenderer {
       if (moisture < MIN_MOISTURE) continue;
 
       // Elevation-based density: sparse at low elevations, dense at mid/high
-      // Remap elevation [0.38..0.80] → density factor [0.15..1.0]
-      const elevT = Math.min(1, (elev - 0.38) / (0.65 - 0.38));
+      // Remap elevation [0.12..0.45] → density factor [0.15..1.0] (adjusted for pow(2.2) curve)
+      const elevT = Math.min(1, (elev - 0.12) / (0.45 - 0.12));
       const elevDensity = 0.15 + 0.85 * elevT * elevT;  // quadratic ramp, dense at top
 
       // Combined thinning: elevation density × moisture

@@ -16,9 +16,9 @@ import { DualMesh, Point } from './DualMesh';
 
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
-const OCEAN_RECHARGE = 0.08;
-const UPLIFT_FACTOR = 8.0;
-const BASE_PRECIP_RATE = 0.04;
+const OCEAN_RECHARGE = 0.06;
+const UPLIFT_FACTOR = 6.0;
+const BASE_PRECIP_RATE = 0.08;
 
 // -- River extraction --
 const RIVER_THRESHOLD = 25;
@@ -269,9 +269,9 @@ export class HydrologyGenerator {
       for (let r = 0; r < N; r++) precipitation[r] /= maxP;
     }
 
-    // Contrast curve: steepen the falloff so dry regions are visibly drier
+    // Mild contrast curve: amplify differences without crushing wet regions
     for (let r = 0; r < N; r++) {
-      precipitation[r] = Math.pow(precipitation[r], 2.0);
+      precipitation[r] = Math.pow(precipitation[r], 1.4);
     }
 
     return precipitation;
@@ -515,11 +515,10 @@ export class HydrologyGenerator {
       const raw = precip[r] * PRECIP_WEIGHT +
         riverProx[r] * RIVER_WEIGHT +
         drainage[r] * DRAINAGE_WEIGHT;
-      // Apply S-curve contrast to push values toward extremes
+      // Gentle S-curve: boost contrast while keeping enough moisture for forests
       const clamped = Math.min(1, Math.max(0, raw));
-      moisture[r] = clamped < 0.5
-        ? 2 * clamped * clamped
-        : 1 - 2 * (1 - clamped) * (1 - clamped);
+      const t = clamped * 2 - 1; // remap to [-1, 1]
+      moisture[r] = Math.min(1, Math.max(0, (t * Math.abs(t) + 1) / 2));
     }
 
     return moisture;

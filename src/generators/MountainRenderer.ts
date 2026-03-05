@@ -1,48 +1,45 @@
-import { createNoise2D } from 'simplex-noise';
+import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
-import { packABGR, applyBrightness } from './TerrainPalettes';
+import { applyBrightness } from './TerrainPalettes';
 
 // ---------------------------------------------------------------------------
-// Mountain peak rendering — 3/4 isometric projection above snow line
+// Mountain peak rendering — volumetric 3/4 iso projection
+// Reference aesthetic: massive rock masses with snow, strong directional
+// lighting, exposed brown/orange cliff faces, blue-tinted snow shadows,
+// jagged irregular silhouettes, diagonal striations.
 // ---------------------------------------------------------------------------
 
-// Snow line threshold (matches TreeRenderer)
 const SNOW_LINE = 0.61;
 const CRAG_MIN_ELEV = 0.45;
 
-// Mountain color zones (RGB hex)
-const ROCK_FACE_DARK = 0x504840;
-const ROCK_FACE_MID = 0x686058;
-const ROCK_FACE_LIGHT = 0x807870;
-const ROCK_STRIATION_DARK = 0x585048;
-const ROCK_STRIATION_LIGHT = 0x908878;
+// ---- Rock palette: warm brown/orange tones (like reference) ----
+const ROCK_WARM_DARK   = 0x5a3c28;  // deep brown shadow
+const ROCK_WARM_MID    = 0x7a5438;  // brown
+const ROCK_WARM_LIGHT  = 0x9a7048;  // warm tan
+const ROCK_WARM_HOT    = 0xb08050;  // orange-brown highlight
 
-const SNOW_SHADOW = 0xb8c8d8;
-const SNOW_MID = 0xd0dce8;
-const SNOW_BRIGHT = 0xe8f0f8;
-const SNOW_HIGHLIGHT = 0xf8fcff;
+const ROCK_COOL_DARK   = 0x3a3840;  // blue-gray deep shadow
+const ROCK_COOL_MID    = 0x585060;  // gray
+const ROCK_COOL_LIGHT  = 0x787078;  // light gray
 
-const CRAG_DARK = 0x605848;
-const CRAG_MID = 0x787060;
-const CRAG_LIGHT = 0x908878;
-const CRAG_HIGHLIGHT = 0xa8a090;
+// ---- Snow palette: blue-tinted shadows, warm highlights ----
+const SNOW_DEEP_SHADOW = 0x8098b8;  // blue shadow in crevices
+const SNOW_SHADOW      = 0xa0b8d0;  // shadow side
+const SNOW_MID         = 0xc8d8e8;  // mid-tone
+const SNOW_BRIGHT      = 0xe0ecf4;  // lit
+const SNOW_HIGHLIGHT   = 0xf0f8ff;  // direct highlight
 
-// Light direction (upper-left, matching GroundRenderer)
-const LIGHT_DIR_X = -0.707;
-const LIGHT_DIR_Y = -0.707;
+// ---- Crag palette ----
+const CRAG_DARK      = 0x585040;
+const CRAG_MID       = 0x706850;
+const CRAG_LIGHT     = 0x888068;
+const CRAG_HIGHLIGHT = 0xa09880;
 
 interface Peak {
-  px: number;      // pixel x
-  py: number;      // pixel y
-  elevation: number;
-  size: number;    // peak radius in pixels
-}
-
-interface Crag {
   px: number;
   py: number;
-  width: number;
-  height: number;
+  elevation: number;
+  size: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -59,11 +56,13 @@ export class MountainRenderer {
     const rng = mulberry32(seed ^ 0x70c4);
     const rngNoise = mulberry32(seed ^ 0x904e);
     const noise = createNoise2D(rngNoise);
+    const rngNoise2 = mulberry32(seed ^ 0x1234);
+    const noise2 = createNoise2D(rngNoise2);
     const N = resolution;
     const scale = topo.size / N;
     const { points, numRegions } = topo.mesh;
 
-    // Build spatial grid
+    // Build spatial grid for region lookup
     const cellSize = 40;
     const gridW = Math.ceil(topo.size / cellSize);
     const grid: number[][] = new Array(gridW * gridW);
@@ -99,38 +98,28 @@ export class MountainRenderer {
       }
     }
 
-    // ----------------------------------------------------------------
-    // 1. Find peak locations (local maxima above snow line)
-    // ----------------------------------------------------------------
+    // 1. Rocky crags at high elevation (below snow line)
+    this._renderCrags(pixels, elevGrid, N, rng, noise);
+
+    // 2. Find and render mountain peaks
     const peaks = this._findPeaks(elevGrid, N, rng);
-
-    // ----------------------------------------------------------------
-    // 2. Render rocky crags at high elevation (below snow line)
-    // ----------------------------------------------------------------
-    this._renderCrags(pixels, elevGrid, N, scale, rng, noise);
-
-    // ----------------------------------------------------------------
-    // 3. Render mountain peaks (3/4 iso projection above snow line)
-    // ----------------------------------------------------------------
-    // Sort by Y so southern peaks overlay northern ones
-    peaks.sort((a, b) => a.py - b.py);
+    peaks.sort((a, b) => a.py - b.py); // painter's order (north first)
 
     for (const peak of peaks) {
-      this._renderPeak(pixels, peak, N, rng, noise);
+      this._renderPeak(pixels, peak, N, rng, noise, noise2);
     }
   }
 
   // -----------------------------------------------------------------------
-  // Find peaks: local elevation maxima above snow line
+  // Find peaks: few, well-spaced, large
   // -----------------------------------------------------------------------
   private _findPeaks(elevGrid: Float32Array, N: number, rng: () => number): Peak[] {
-    const SEARCH_RADIUS = 80; // pixels — minimum distance between peaks
-    const MAX_PEAKS = 8;      // cap total number of peaks
+    const SEARCH_RADIUS = 120;
+    const MAX_PEAKS = 4;
     const placed: Peak[] = [];
 
-    // Collect all pixels above snow line, sort by elevation descending
     const candidates: { px: number; py: number; elev: number }[] = [];
-    const step = 6; // sample every 6th pixel for speed
+    const step = 8;
     for (let py = step; py < N - step; py += step) {
       for (let px = step; px < N - step; px += step) {
         const elev = elevGrid[py * N + px];
@@ -143,8 +132,6 @@ export class MountainRenderer {
 
     for (const c of candidates) {
       if (placed.length >= MAX_PEAKS) break;
-
-      // Check distance from already placed peaks
       let tooClose = false;
       for (const p of placed) {
         const dx = c.px - p.px;
@@ -156,9 +143,8 @@ export class MountainRenderer {
       }
       if (tooClose) continue;
 
-      // Peak size based on elevation (higher = larger peak)
-      const size = 20 + Math.floor((c.elev - SNOW_LINE) / (1 - SNOW_LINE) * 40);
-
+      // Bigger peaks: 40-80px radius
+      const size = 40 + Math.floor((c.elev - SNOW_LINE) / (1 - SNOW_LINE) * 40);
       placed.push({ px: c.px, py: c.py, elevation: c.elev, size });
     }
 
@@ -166,127 +152,253 @@ export class MountainRenderer {
   }
 
   // -----------------------------------------------------------------------
-  // Render a single mountain peak with 3/4 iso projection
+  // Render a single volumetric mountain peak
   // -----------------------------------------------------------------------
   private _renderPeak(
     pixels: Uint32Array,
     peak: Peak,
     N: number,
     rng: () => number,
-    noise: (x: number, y: number) => number,
+    noise: NoiseFunction2D,
+    noise2: NoiseFunction2D,
   ): void {
-    const { px: cx, py: cy, size, elevation } = peak;
+    const { px: cx, py: cy, size } = peak;
 
-    // Peak apex is offset north (upward) from center to create 3/4 perspective
-    const apexY = cy - Math.floor(size * 1.2);
-    const apexX = cx;
+    // The mountain is a 3D mass. We define it as a height field:
+    // at each (x,y) pixel, we compute a "local height" above the base.
+    // The peak apex is offset north (upward) from the center for 3/4 view.
+    const apexOffsetY = -size * 0.5;  // apex is north of center
 
-    // Draw from bottom to top so upper pixels overlay lower
-    const baseWidth = size * 2;
-    const peakHeight = Math.floor(size * 1.8);
+    // The mountain base is an irregular ellipse
+    const baseRadiusX = size * 1.1;
+    const baseRadiusY = size * 0.8;
+    const peakHeight = size * 1.6; // vertical extent in pixels
 
-    for (let y = cy + Math.floor(size * 0.3); y >= apexY; y--) {
-      if (y < 0 || y >= N) continue;
+    // Multiple sub-peaks for irregular silhouette
+    const subPeakCount = 2 + Math.floor(rng() * 3);
+    const subPeaks: { dx: number; dy: number; h: number; r: number }[] = [];
+    // Main peak
+    subPeaks.push({ dx: 0, dy: apexOffsetY, h: 1.0, r: size * 0.6 });
+    for (let i = 0; i < subPeakCount; i++) {
+      const angle = rng() * Math.PI * 2;
+      const dist = size * (0.2 + rng() * 0.5);
+      subPeaks.push({
+        dx: Math.cos(angle) * dist,
+        dy: Math.sin(angle) * dist * 0.6 + apexOffsetY * (0.3 + rng() * 0.5),
+        h: 0.4 + rng() * 0.5,
+        r: size * (0.3 + rng() * 0.3),
+      });
+    }
 
-      // How far up the peak are we (0 = base, 1 = apex)
-      const t = 1 - (y - apexY) / peakHeight;
-      const tClamped = Math.max(0, Math.min(1, t));
+    // Render bounding box
+    const minX = Math.max(0, Math.floor(cx - baseRadiusX - 10));
+    const maxX = Math.min(N - 1, Math.ceil(cx + baseRadiusX + 10));
+    const minY = Math.max(0, Math.floor(cy + apexOffsetY - peakHeight * 0.3));
+    const maxY = Math.min(N - 1, Math.ceil(cy + baseRadiusY + 5));
 
-      // Width narrows toward apex
-      const rowHalfWidth = Math.max(1, Math.floor(baseWidth * (1 - tClamped * 0.85) / 2));
+    // First pass: compute height field for the mountain
+    const w = maxX - minX + 1;
+    const h = maxY - minY + 1;
+    const heightField = new Float32Array(w * h);
 
-      for (let x = cx - rowHalfWidth; x <= cx + rowHalfWidth; x++) {
-        if (x < 0 || x >= N) continue;
+    for (let py = minY; py <= maxY; py++) {
+      for (let px = minX; px <= maxX; px++) {
+        const lx = px - minX;
+        const ly = py - minY;
 
-        // Horizontal position relative to center (-1 to 1)
-        const relX = rowHalfWidth > 0 ? (x - cx) / rowHalfWidth : 0;
+        // Distance from base center, normalized by ellipse radii
+        const relX = (px - cx) / baseRadiusX;
+        const relY = (py - cy) / baseRadiusY;
+        const baseDist = Math.sqrt(relX * relX + relY * relY);
 
-        // Directional lighting: left side (negative x) is lit, right side shadowed
-        const lightDot = relX * LIGHT_DIR_X + (tClamped - 0.5) * LIGHT_DIR_Y;
-        const lightFactor = 0.5 + lightDot * 0.8;
-        const light = Math.max(0.3, Math.min(1.1, lightFactor));
+        if (baseDist > 1.3) continue; // well outside base
 
-        // Noise for rock texture
-        const n = noise(x * 0.15, y * 0.15);
-
-        // Snow coverage: more at top, more on lit (left) side
-        const snowChance = tClamped * 0.8 + (relX < 0 ? 0.2 : -0.1) + n * 0.15;
-        const isSnow = snowChance > 0.35;
-
-        let rgb: number;
-        if (isSnow) {
-          // Snow shading
-          if (light > 0.8) rgb = SNOW_HIGHLIGHT;
-          else if (light > 0.6) rgb = SNOW_BRIGHT;
-          else if (light > 0.4) rgb = SNOW_MID;
-          else rgb = SNOW_SHADOW;
-        } else {
-          // Rock face with striations
-          const striationN = noise(x * 0.3, y * 0.5);
-          if (striationN > 0.3) {
-            rgb = light > 0.6 ? ROCK_STRIATION_LIGHT : ROCK_STRIATION_DARK;
-          } else {
-            if (light > 0.7) rgb = ROCK_FACE_LIGHT;
-            else if (light > 0.45) rgb = ROCK_FACE_MID;
-            else rgb = ROCK_FACE_DARK;
-          }
+        // Height is sum of sub-peak contributions (smooth max)
+        let maxH = 0;
+        for (const sp of subPeaks) {
+          const dx = px - (cx + sp.dx);
+          const dy = py - (cy + sp.dy);
+          const d = Math.sqrt(dx * dx + dy * dy);
+          const falloff = Math.max(0, 1 - d / sp.r);
+          const contribution = sp.h * falloff * falloff; // quadratic falloff
+          if (contribution > maxH) maxH = contribution;
         }
 
-        // Edge darkening for silhouette definition
-        const edgeDist = 1 - Math.abs(relX);
-        const edgeFactor = edgeDist < 0.15 ? 0.7 + edgeDist * 2 : 1.0;
+        // Noise-perturbed edges for irregular silhouette
+        const edgeNoise = noise(px * 0.08, py * 0.08) * 0.15;
+        const baseShape = Math.max(0, 1 - baseDist + edgeNoise);
+        const localHeight = maxH * baseShape;
 
-        pixels[y * N + x] = applyBrightness(rgb, light * edgeFactor);
+        if (localHeight > 0.01) {
+          heightField[ly * w + lx] = localHeight;
+        }
       }
     }
 
-    // Draw a few ridge lines radiating from apex for geological detail
-    this._drawRidgeLines(pixels, peak, N, rng, noise);
+    // Second pass: render with lighting, color zones, snow/rock
+    for (let py = minY; py <= maxY; py++) {
+      for (let px = minX; px <= maxX; px++) {
+        const lx = px - minX;
+        const ly = py - minY;
+        const localH = heightField[ly * w + lx];
+        if (localH < 0.01) continue;
+
+        // Compute surface normal from height field (for lighting)
+        const hL = lx > 0 ? heightField[ly * w + lx - 1] : localH;
+        const hR = lx < w - 1 ? heightField[ly * w + lx + 1] : localH;
+        const hU = ly > 0 ? heightField[(ly - 1) * w + lx] : localH;
+        const hD = ly < h - 1 ? heightField[(ly + 1) * w + lx] : localH;
+
+        const slopeX = (hR - hL) * 0.5;
+        const slopeY = (hD - hU) * 0.5;
+
+        // Steepness (for determining rock vs snow)
+        const steepness = Math.sqrt(slopeX * slopeX + slopeY * slopeY);
+
+        // Directional lighting (upper-left)
+        const lightDot = slopeX * -0.707 + slopeY * -0.707;
+        const rawLight = 0.55 + lightDot * 3.5;
+        // Quantize for pixel-art look
+        const light = Math.max(0.2, Math.min(1.15,
+          Math.floor(rawLight * 6) / 6));
+
+        // Position relative to center
+        const relX = (px - cx) / baseRadiusX;
+
+        // ---- Determine material: snow or rock ----
+        // Snow on top surfaces (low steepness), more on lit side (left)
+        // Rock on steep faces and shadow side
+        const snowFactor =
+          localH * 1.2                          // higher = more snow
+          - steepness * 4.0                     // steep = exposed rock
+          + (relX < 0 ? 0.15 : -0.15)          // snow favors lit side
+          + noise(px * 0.12, py * 0.12) * 0.2; // natural variation
+
+        const isSnow = snowFactor > 0.35;
+
+        // ---- Rock face: warm tones on lit side, cool on shadow ----
+        let rgb: number;
+        if (isSnow) {
+          // Snow with blue-tinted shadows
+          if (light > 0.95) rgb = SNOW_HIGHLIGHT;
+          else if (light > 0.75) rgb = SNOW_BRIGHT;
+          else if (light > 0.55) rgb = SNOW_MID;
+          else if (light > 0.35) rgb = SNOW_SHADOW;
+          else rgb = SNOW_DEEP_SHADOW;
+        } else {
+          // Rock face material
+          const isLitSide = relX < 0.1;
+
+          // Diagonal striations for geological texture
+          const striationFreq = 0.25;
+          const striation = noise2(
+            (px * striationFreq + py * striationFreq * 0.7),
+            (py * striationFreq - px * striationFreq * 0.3),
+          );
+
+          if (isLitSide) {
+            // Warm brown/orange tones on lit side (like reference)
+            if (striation > 0.3) {
+              rgb = light > 0.6 ? ROCK_WARM_HOT : ROCK_WARM_LIGHT;
+            } else if (striation > -0.2) {
+              rgb = light > 0.6 ? ROCK_WARM_LIGHT : ROCK_WARM_MID;
+            } else {
+              rgb = light > 0.5 ? ROCK_WARM_MID : ROCK_WARM_DARK;
+            }
+          } else {
+            // Cool gray/blue tones on shadow side
+            if (striation > 0.3) {
+              rgb = light > 0.5 ? ROCK_COOL_LIGHT : ROCK_COOL_MID;
+            } else {
+              rgb = light > 0.5 ? ROCK_COOL_MID : ROCK_COOL_DARK;
+            }
+          }
+
+          // Crevice darkening in valleys of the height field
+          if (localH < 0.15 && steepness > 0.05) {
+            rgb = ROCK_COOL_DARK;
+          }
+        }
+
+        // Edge darkening for silhouette pop
+        const edgeDist = Math.min(
+          lx > 0 ? heightField[ly * w + lx - 1] : 0,
+          lx < w - 1 ? heightField[ly * w + lx + 1] : 0,
+          ly > 0 ? heightField[(ly - 1) * w + lx] : 0,
+          ly < h - 1 ? heightField[(ly + 1) * w + lx] : 0,
+        );
+        const edgeFactor = edgeDist < 0.02 ? 0.65 : 1.0;
+
+        pixels[py * N + px] = applyBrightness(rgb, light * edgeFactor);
+      }
+    }
+
+    // ---- Ridge lines from apex for sharp geological detail ----
+    this._drawRidgeLines(pixels, peak, N, rng, noise, heightField, minX, minY, w, h);
   }
 
   // -----------------------------------------------------------------------
-  // Ridge lines extending from peak
+  // Ridge lines: sharp highlight/shadow pairs radiating from apex
   // -----------------------------------------------------------------------
   private _drawRidgeLines(
     pixels: Uint32Array,
     peak: Peak,
     N: number,
     rng: () => number,
-    noise: (x: number, y: number) => number,
+    noise: NoiseFunction2D,
+    heightField: Float32Array,
+    hfMinX: number,
+    hfMinY: number,
+    hfW: number,
+    hfH: number,
   ): void {
     const apexX = peak.px;
-    const apexY = peak.py - Math.floor(peak.size * 1.2);
-    const ridgeCount = 2 + Math.floor(rng() * 2);
+    const apexY = peak.py - peak.size * 0.5;
+    const ridgeCount = 3 + Math.floor(rng() * 3);
 
     for (let r = 0; r < ridgeCount; r++) {
-      const angle = (r / ridgeCount) * Math.PI + rng() * 0.5 + Math.PI * 0.25;
-      const length = peak.size * (0.5 + rng() * 0.8);
+      const angle = (r / ridgeCount) * Math.PI * 1.5 + rng() * 0.6 + Math.PI * 0.2;
+      const length = peak.size * (0.4 + rng() * 0.7);
 
       let x = apexX;
       let y = apexY;
       const dx = Math.cos(angle);
-      const dy = Math.sin(angle) * 0.6; // foreshortened vertically
+      const dy = Math.sin(angle) * 0.55; // foreshortened
 
       for (let step = 0; step < length; step++) {
-        const px = Math.floor(x);
-        const py = Math.floor(y);
-        if (px < 0 || px >= N || py < 0 || py >= N) break;
+        const ix = Math.floor(x);
+        const iy = Math.floor(y);
+        if (ix < 0 || ix >= N || iy < 0 || iy >= N) break;
 
-        // Ridge is a highlight line (snow or bright rock)
-        const t = step / length;
-        const ridgeLight = 1.0 - t * 0.3;
-        const rgb = t < 0.5 ? SNOW_MID : ROCK_FACE_LIGHT;
-        pixels[py * N + px] = applyBrightness(rgb, ridgeLight);
+        // Only draw on mountain pixels
+        const lx = ix - hfMinX;
+        const ly = iy - hfMinY;
+        if (lx < 0 || lx >= hfW || ly < 0 || ly >= hfH) break;
+        if (heightField[ly * hfW + lx] < 0.05) break;
 
-        // Shadow pixel on one side
-        const shadowPx = px + 1;
-        const shadowPy = py;
-        if (shadowPx >= 0 && shadowPx < N && shadowPy >= 0 && shadowPy < N) {
-          const si = shadowPy * N + shadowPx;
-          pixels[si] = applyBrightness(ROCK_FACE_DARK, 0.6);
+        const t = step / length; // 0=apex, 1=end
+        const isSnowZone = t < 0.4;
+
+        // Highlight pixel (ridge crest)
+        const highlightRGB = isSnowZone ? SNOW_BRIGHT : ROCK_WARM_LIGHT;
+        pixels[iy * N + ix] = applyBrightness(highlightRGB, 0.95 - t * 0.2);
+
+        // Shadow pixel on downslope side
+        const perpX = Math.round(-dy);
+        const perpY = Math.round(dx);
+        const sx = ix + perpX;
+        const sy = iy + perpY;
+        if (sx >= 0 && sx < N && sy >= 0 && sy < N) {
+          const slx = sx - hfMinX;
+          const sly = sy - hfMinY;
+          if (slx >= 0 && slx < hfW && sly >= 0 && sly < hfH &&
+              heightField[sly * hfW + slx] > 0.02) {
+            const shadowRGB = isSnowZone ? SNOW_DEEP_SHADOW : ROCK_COOL_DARK;
+            pixels[sy * N + sx] = applyBrightness(shadowRGB, 0.5);
+          }
         }
 
-        x += dx;
+        x += dx + noise(x * 0.05, y * 0.05) * 0.3; // slight meander
         y += dy;
       }
     }
@@ -299,56 +411,53 @@ export class MountainRenderer {
     pixels: Uint32Array,
     elevGrid: Float32Array,
     N: number,
-    scale: number,
     rng: () => number,
-    noise: (x: number, y: number) => number,
+    noise: NoiseFunction2D,
   ): void {
-    const crags: Crag[] = [];
-    const CRAG_DENSITY = 0.002; // probability per sampled pixel
-    const step = 6;
+    const step = 8;
+    const CRAG_DENSITY = 0.003;
 
     for (let py = step; py < N - step; py += step) {
       for (let px = step; px < N - step; px += step) {
         const elev = elevGrid[py * N + px];
         if (elev < CRAG_MIN_ELEV || elev >= SNOW_LINE) continue;
 
-        // Higher elevation = more crags
         const chance = CRAG_DENSITY * ((elev - CRAG_MIN_ELEV) / (SNOW_LINE - CRAG_MIN_ELEV));
         if (rng() > chance) continue;
 
-        const width = 3 + Math.floor(rng() * 5);
-        const height = 3 + Math.floor(rng() * 5);
-        crags.push({ px, py, width, height });
+        const cragW = 3 + Math.floor(rng() * 6);
+        const cragH = 4 + Math.floor(rng() * 6);
+        this._renderCrag(pixels, px, py, cragW, cragH, N, rng, noise);
       }
-    }
-
-    for (const crag of crags) {
-      this._renderCrag(pixels, crag, N, rng, noise);
     }
   }
 
   private _renderCrag(
     pixels: Uint32Array,
-    crag: Crag,
+    cx: number,
+    cy: number,
+    width: number,
+    height: number,
     N: number,
     rng: () => number,
-    noise: (x: number, y: number) => number,
+    noise: NoiseFunction2D,
   ): void {
-    const { px: cx, py: cy, width, height } = crag;
-
     for (let dy = -height; dy <= 0; dy++) {
-      // Width narrows toward top
       const t = 1 - (-dy / height); // 0 at top, 1 at base
-      const rowHalfWidth = Math.max(1, Math.floor(width * t / 2));
+      const rowHW = Math.max(1, Math.floor(width * t / 2));
 
-      for (let dx = -rowHalfWidth; dx <= rowHalfWidth; dx++) {
+      // Noise-perturbed edge
+      const edgeNoise = noise(cx * 0.15 + dy * 0.3, cy * 0.15) * 1.5;
+      const adjustedHW = Math.max(1, rowHW + Math.floor(edgeNoise));
+
+      for (let dx = -adjustedHW; dx <= adjustedHW; dx++) {
         const px = cx + dx;
         const py = cy + dy;
         if (px < 0 || px >= N || py < 0 || py >= N) continue;
 
-        const relX = rowHalfWidth > 0 ? dx / rowHalfWidth : 0;
-        const light = 0.5 + relX * LIGHT_DIR_X * 0.6 + (t - 0.5) * LIGHT_DIR_Y * 0.4;
-        const lightClamped = Math.max(0.35, Math.min(1.0, light));
+        const relX = adjustedHW > 0 ? dx / adjustedHW : 0;
+        const light = 0.55 + relX * -0.707 * 0.5 + (t - 0.5) * -0.707 * 0.4;
+        const lightClamped = Math.max(0.3, Math.min(1.0, light));
 
         const n = noise(px * 0.2, py * 0.2);
         let rgb: number;

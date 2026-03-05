@@ -1,7 +1,7 @@
 import { createNoise2D } from 'simplex-noise';
 import { TopographyGenerator, TerrainType, mulberry32, MAP_SCALE } from './TopographyGenerator';
 import { HydrologyGenerator } from './HydrologyGenerator';
-import { PALETTES, BAYER_4X4, applyBrightness, packABGR } from './TerrainPalettes';
+import { PALETTES, applyBrightness, packABGR } from './TerrainPalettes';
 
 // Terrain type ↔ integer index for typed-array storage
 const TERRAIN_INDEX: Record<TerrainType, number> = {
@@ -17,9 +17,6 @@ const LIGHT_DIR_Y = -0.707;
 const LIGHT_STRENGTH = 3.0;
 const LIGHT_BASE = 0.75;
 const LIGHT_STEPS = 5;
-
-// Border dithering
-const DITHER_RANGE = 6;
 
 export class GroundRenderer {
   regionGrid: Uint16Array | null = null;
@@ -137,82 +134,6 @@ export class GroundRenderer {
     }
 
     // ------------------------------------------------------------------
-    // Phase 1C: Border distance + border terrain (chamfer distance)
-    // ------------------------------------------------------------------
-    const borderDist = new Float32Array(totalPixels);
-    const borderTerrain = new Uint8Array(totalPixels);
-    const MAX_DIST = DITHER_RANGE + 1;
-
-    // Initialize: border pixels = 0, interior = MAX_DIST
-    for (let py = 0; py < N; py++) {
-      for (let px = 0; px < N; px++) {
-        const i = py * N + px;
-        const t = terrainGrid[i];
-        let isBorder = false;
-        let neighborT = t;
-
-        if (px > 0 && terrainGrid[i - 1] !== t)     { isBorder = true; neighborT = terrainGrid[i - 1]; }
-        if (px < N-1 && terrainGrid[i + 1] !== t)    { isBorder = true; neighborT = terrainGrid[i + 1]; }
-        if (py > 0 && terrainGrid[i - N] !== t)      { isBorder = true; neighborT = terrainGrid[i - N]; }
-        if (py < N-1 && terrainGrid[i + N] !== t)    { isBorder = true; neighborT = terrainGrid[i + N]; }
-
-        if (isBorder) {
-          borderDist[i] = 0;
-          borderTerrain[i] = neighborT;
-        } else {
-          borderDist[i] = MAX_DIST;
-          borderTerrain[i] = t;
-        }
-      }
-    }
-
-    // Forward pass (top-left → bottom-right)
-    for (let py = 0; py < N; py++) {
-      for (let px = 0; px < N; px++) {
-        const i = py * N + px;
-        if (py > 0) {
-          const above = i - N;
-          const d = borderDist[above] + 1;
-          if (d < borderDist[i]) {
-            borderDist[i] = d;
-            borderTerrain[i] = borderTerrain[above];
-          }
-        }
-        if (px > 0) {
-          const left = i - 1;
-          const d = borderDist[left] + 1;
-          if (d < borderDist[i]) {
-            borderDist[i] = d;
-            borderTerrain[i] = borderTerrain[left];
-          }
-        }
-      }
-    }
-
-    // Backward pass (bottom-right → top-left)
-    for (let py = N - 1; py >= 0; py--) {
-      for (let px = N - 1; px >= 0; px--) {
-        const i = py * N + px;
-        if (py < N - 1) {
-          const below = i + N;
-          const d = borderDist[below] + 1;
-          if (d < borderDist[i]) {
-            borderDist[i] = d;
-            borderTerrain[i] = borderTerrain[below];
-          }
-        }
-        if (px < N - 1) {
-          const right = i + 1;
-          const d = borderDist[right] + 1;
-          if (d < borderDist[i]) {
-            borderDist[i] = d;
-            borderTerrain[i] = borderTerrain[right];
-          }
-        }
-      }
-    }
-
-    // ------------------------------------------------------------------
     // Phase 2: Pixel shader
     // ------------------------------------------------------------------
     const pixels = new Uint32Array(totalPixels);
@@ -259,22 +180,6 @@ export class GroundRenderer {
         lightFactor = Math.max(0.35, Math.min(1.0, lightFactor));
         // Quantize for pixel-art stepped shading
         lightFactor = Math.floor(lightFactor * LIGHT_STEPS) / LIGHT_STEPS;
-
-        // 3. Border dithering
-        const bd = borderDist[i];
-        if (bd < DITHER_RANGE) {
-          const threshold = BAYER_4X4[(py % 4) * 4 + (px % 4)] / 16;
-          const blendChance = 1.0 - bd / DITHER_RANGE;
-          if (blendChance > threshold) {
-            const nbrTerrain = INDEX_TERRAIN[borderTerrain[i]];
-            const nbrPalette = PALETTES[nbrTerrain];
-            const nIdx = Math.min(
-              Math.floor(t * nbrPalette.detailAmp * nbrPalette.base.length),
-              nbrPalette.base.length - 1,
-            );
-            baseRGB = nbrPalette.base[nIdx];
-          }
-        }
 
         pixels[i] = applyBrightness(baseRGB, lightFactor);
       }

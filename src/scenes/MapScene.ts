@@ -4,9 +4,12 @@ import { GroundRenderer } from '../generators/GroundRenderer';
 import { HydrologyGenerator } from '../generators/HydrologyGenerator';
 import { TreeRenderer } from '../generators/TreeRenderer';
 import { RiverAnimator } from '../generators/RiverAnimator';
+import { CoastalRenderer } from '../generators/CoastalRenderer';
+import { MountainRenderer } from '../generators/MountainRenderer';
+import { RiverDeltaRenderer } from '../generators/RiverDeltaRenderer';
 
-const MAP_SIZE = 2048;
-const PIXEL_RESOLUTION = 1024;
+const MAP_SIZE = 4096;
+const PIXEL_RESOLUTION = 2048;
 
 const SCROLL_SPEED = 300;
 const ZOOM_SPEED = 0.03;
@@ -26,6 +29,7 @@ export class MapScene extends Phaser.Scene {
   private _imageData!: ImageData;
   private _ctx!: CanvasRenderingContext2D;
   private _riverAnimator!: RiverAnimator;
+  private _coastalRenderer!: CoastalRenderer;
 
   // Region hover highlight
   private _regionGrid!: Uint16Array | null;
@@ -56,6 +60,7 @@ export class MapScene extends Phaser.Scene {
 
     // Camera setup
     const cam = this.cameras.main;
+    cam.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
     cam.centerOn(MAP_SIZE / 2, MAP_SIZE / 2);
 
     // Input — use =/- keys (regular keyboard, not numpad-only)
@@ -121,6 +126,9 @@ export class MapScene extends Phaser.Scene {
 
       if (!overlayBuf) {
         this._riverAnimator.animate(this._pixels, time);
+        if (this._coastalRenderer) {
+          this._coastalRenderer.animate(this._pixels, time);
+        }
       }
 
       new Uint8ClampedArray(this._imageData.data.buffer)
@@ -335,17 +343,33 @@ export class MapScene extends Phaser.Scene {
     const renderer = new GroundRenderer();
     const pixels = renderer.render(topo, PIXEL_RESOLUTION, hydro);
 
+    // Beaches, ocean sparkles, sea stacks (before trees so trees overlay beaches)
+    const coastalRenderer = new CoastalRenderer();
+    coastalRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
+
+    // River deltas and harbors at river mouths
+    const deltaRenderer = new RiverDeltaRenderer();
+    deltaRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
+
     // Trees (before rivers so river animator can overwrite)
     const treeRenderer = new TreeRenderer();
     treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
+
+    // Rocky crags and mountain peaks (after trees so peaks overlay trees)
+    const mountainRenderer = new MountainRenderer();
+    mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed);
 
     // River animator pre-computes pixel positions; draws first frame
     const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed);
     riverAnimator.animate(pixels, 0);
 
+    // Coastal animation first frame
+    coastalRenderer.animate(pixels, 0);
+
     // Store refs for per-frame animation
     this._pixels = pixels;
     this._riverAnimator = riverAnimator;
+    this._coastalRenderer = coastalRenderer;
     this._regionGrid = renderer.regionGrid;
     this._hoveredRegion = -1;
     this._highlightIndices = [];

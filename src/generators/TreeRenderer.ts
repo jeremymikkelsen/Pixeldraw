@@ -8,8 +8,8 @@ import { packABGR } from './TerrainPalettes';
 // ---------------------------------------------------------------------------
 const LIGHT_DIR_X = -0.707;
 const LIGHT_DIR_Y = -0.707;
-const MIN_TREE_SPACING = 4;
-const MAX_TREE_SPACING = 12;
+const MIN_TREE_SPACING = 5;
+const MAX_TREE_SPACING = 14;
 const MIN_MOISTURE = 0.15;
 const SHADOW_OFFSET_X = 1;
 const SHADOW_OFFSET_Y = 0;
@@ -99,18 +99,14 @@ const DECIDUOUS_TEMPLATES: SpriteTemplate[] = [
 ];
 
 const CONIFER_TEMPLATES: SpriteTemplate[] = [
-  // Small conifer (3×7) — narrow spire
-  { w: 3, h: 7, data: [
+  // Small conifer (3×14) — narrow spire, ~2x taller
+  { w: 3, h: 14, data: [
     _, C, _,
     _, C, _,
     C, C, C,
     _, C, _,
     C, C, C,
-    _, T, _,
-    _, T, _,
-  ]},
-  // Small conifer variant (3×7)
-  { w: 3, h: 7, data: [
+    _, C, _,
     _, C, _,
     C, C, C,
     _, C, _,
@@ -118,21 +114,53 @@ const CONIFER_TEMPLATES: SpriteTemplate[] = [
     C, C, C,
     _, T, _,
     _, T, _,
+    _, T, _,
   ]},
-  // Medium conifer (5×9) — layered tiers
-  { w: 5, h: 9, data: [
+  // Small conifer variant (3×14)
+  { w: 3, h: 14, data: [
+    _, C, _,
+    _, C, _,
+    C, C, C,
+    _, C, _,
+    C, C, C,
+    C, C, C,
+    _, C, _,
+    C, C, C,
+    _, C, _,
+    C, C, C,
+    C, C, C,
+    _, T, _,
+    _, T, _,
+    _, T, _,
+  ]},
+  // Medium conifer (5×18) — layered tiers, ~2x taller
+  { w: 5, h: 18, data: [
     _, _, C, _, _,
+    _, _, C, _, _,
+    _, C, C, C, _,
     _, _, C, _, _,
     _, C, C, C, _,
     C, C, C, C, C,
     _, _, C, _, _,
     _, C, C, C, _,
     C, C, C, C, C,
+    _, _, C, _, _,
+    _, C, C, C, _,
+    C, C, C, C, C,
+    _, C, C, C, _,
+    C, C, C, C, C,
+    _, C, C, C, _,
+    _, _, T, _, _,
     _, _, T, _, _,
     _, _, T, _, _,
   ]},
-  // Medium conifer variant (5×9)
-  { w: 5, h: 9, data: [
+  // Medium conifer variant (5×18)
+  { w: 5, h: 18, data: [
+    _, _, C, _, _,
+    _, _, C, _, _,
+    _, C, C, C, _,
+    C, C, C, C, C,
+    _, _, C, _, _,
     _, _, C, _, _,
     _, C, C, C, _,
     C, C, C, C, C,
@@ -140,21 +168,35 @@ const CONIFER_TEMPLATES: SpriteTemplate[] = [
     _, C, C, C, _,
     C, C, C, C, C,
     _, C, C, C, _,
+    C, C, C, C, C,
+    _, C, C, C, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
     _, _, T, _, _,
     _, _, T, _, _,
   ]},
-  // Large conifer (5×10) — tall layered
-  { w: 5, h: 10, data: [
-    _, _, C, _, _,
-    _, _, C, _, _,
-    _, C, C, C, _,
-    C, C, C, C, C,
-    _, _, C, _, _,
-    _, C, C, C, _,
-    C, C, C, C, C,
-    _, C, C, C, _,
-    _, _, T, _, _,
-    _, _, T, _, _,
+  // Large conifer (7×20) — tall layered, ~2x taller
+  { w: 7, h: 20, data: [
+    _, _, _, C, _, _, _,
+    _, _, _, C, _, _, _,
+    _, _, C, C, C, _, _,
+    _, _, _, C, _, _, _,
+    _, _, C, C, C, _, _,
+    _, C, C, C, C, C, _,
+    _, _, _, C, _, _, _,
+    _, _, C, C, C, _, _,
+    _, C, C, C, C, C, _,
+    C, C, C, C, C, C, C,
+    _, _, C, C, C, _, _,
+    _, C, C, C, C, C, _,
+    C, C, C, C, C, C, C,
+    _, C, C, C, C, C, _,
+    C, C, C, C, C, C, C,
+    _, _, C, C, C, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
   ]},
 ];
 

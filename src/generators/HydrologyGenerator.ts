@@ -16,7 +16,7 @@ import { DualMesh, Point } from './DualMesh';
 
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
-const OCEAN_RECHARGE = 0.06;
+const OCEAN_RECHARGE = 0.03;
 const UPLIFT_FACTOR = 4.0;
 const BASE_PRECIP_RATE = 0.008;
 const ELEV_CURVE_EXP = 2.2; // must match TopographyGenerator pow() exponent
@@ -25,10 +25,10 @@ const ELEV_CURVE_EXP = 2.2; // must match TopographyGenerator pow() exponent
 const RIVER_THRESHOLD = 25;
 
 // -- Soil moisture --
-const PRECIP_WEIGHT = 0.80;
-const RIVER_WEIGHT = 0.15;
+const PRECIP_WEIGHT = 0.85;
+const RIVER_WEIGHT = 0.10;
 const DRAINAGE_WEIGHT = 0.05;
-const RIVER_SPREAD_DIST = 6;
+const RIVER_SPREAD_DIST = 4;
 
 // ---------------------------------------------------------------------------
 // Inline binary min-heap
@@ -120,7 +120,7 @@ export class HydrologyGenerator {
 
     // Step 4: flow accumulation
     const flowAccumulation = this._computeFlowAccumulation(
-      filledElev, flowDirection, terrainType, N,
+      filledElev, flowDirection, terrainType, N, precipitation,
     );
 
     // Step 5: rivers
@@ -362,14 +362,18 @@ export class HydrologyGenerator {
     flowDir: Int32Array,
     terrain: TerrainType[],
     N: number,
+    precipitation?: Float32Array,
   ): Float32Array {
     const accum = new Float32Array(N);
 
     // Collect land regions and sort by elevation descending
+    // Weight each cell's contribution by its precipitation so dry leeward
+    // cells contribute less water → smaller rivers on the rain shadow side
     const landRegions: number[] = [];
     for (let r = 0; r < N; r++) {
       if (!isWater(terrain[r])) {
-        accum[r] = 1.0;
+        // Base contribution of 0.3 + up to 0.7 from precipitation
+        accum[r] = precipitation ? 0.3 + 0.7 * precipitation[r] : 1.0;
         landRegions.push(r);
       }
     }
@@ -522,9 +526,9 @@ export class HydrologyGenerator {
       }
       // Air moisture: the dominant large-scale signal (rain shadow)
       // River/drainage: local corrections near waterways
-      const raw = airMoisture[r] * 0.70 +
-        riverProx[r] * 0.20 +
-        drainage[r] * 0.10;
+      const raw = airMoisture[r] * PRECIP_WEIGHT +
+        riverProx[r] * RIVER_WEIGHT +
+        drainage[r] * DRAINAGE_WEIGHT;
       moisture[r] = Math.min(1, Math.max(0, raw));
     }
 

@@ -1,7 +1,9 @@
 import { createNoise2D } from 'simplex-noise';
-import { TopographyGenerator, TerrainType, mulberry32, MAP_SCALE } from './TopographyGenerator';
+import { TopographyGenerator } from './TopographyGenerator';
+import { type TerrainType, mulberry32, LIGHT_DIR_X, LIGHT_DIR_Y } from './utils';
 import { HydrologyGenerator } from './HydrologyGenerator';
-import { PALETTES, BAYER_4X4, applyBrightness, packABGR } from './TerrainPalettes';
+import { PALETTES, BAYER_4X4, applyBrightness } from './TerrainPalettes';
+import { SpatialGrid } from './SpatialGrid';
 
 // Terrain type ↔ integer index for typed-array storage
 const TERRAIN_INDEX: Record<TerrainType, number> = {
@@ -12,8 +14,6 @@ const INDEX_TERRAIN: TerrainType[] = [
 ];
 
 // Lighting
-const LIGHT_DIR_X = -0.707;
-const LIGHT_DIR_Y = -0.707;
 const LIGHT_STRENGTH = 3.0;
 const LIGHT_BASE = 0.75;
 const LIGHT_STEPS = 5;
@@ -27,7 +27,6 @@ export class GroundRenderer {
   render(topo: TopographyGenerator, resolution: number, hydro?: HydrologyGenerator): Uint32Array {
     const { size, seed, mesh, terrainType: regionTerrain } = topo;
     const { points } = mesh;
-    const numRegions = mesh.numRegions;
 
     const N = resolution;
     const totalPixels = N * N;
@@ -39,26 +38,10 @@ export class GroundRenderer {
     const rngDetail = mulberry32(seed ^ 0xcafebabe);
     const detailNoise = createNoise2D(rngDetail);
 
-    // MAP_SCALE offset for elevation (same as TopographyGenerator)
-    const totalSize = size * MAP_SCALE;
-    const offset = (totalSize - size) / 2;
-    const halfTotal = totalSize / 2;
-
     // ------------------------------------------------------------------
     // Spatial grid for nearest-region lookup
     // ------------------------------------------------------------------
-    const cellSize = 40;
-    const gridW = Math.ceil(size / cellSize);
-    const grid: number[][] = new Array(gridW * gridW);
-    for (let i = 0; i < grid.length; i++) grid[i] = [];
-
-    for (let r = 0; r < numRegions; r++) {
-      const gx = Math.min(Math.floor(points[r].x / cellSize), gridW - 1);
-      const gy = Math.min(Math.floor(points[r].y / cellSize), gridW - 1);
-      if (gx >= 0 && gy >= 0) {
-        grid[gy * gridW + gx].push(r);
-      }
-    }
+    const spatialGrid = new SpatialGrid(points, size);
 
     // ------------------------------------------------------------------
     // Phase 1A: Region assignment + per-pixel elevation
@@ -69,50 +52,17 @@ export class GroundRenderer {
 
     for (let py = 0; py < N; py++) {
       const wy = (py + 0.5) * scale;
-      const gy = Math.floor(wy / cellSize);
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
         const wx = (px + 0.5) * scale;
-        const gx = Math.floor(wx / cellSize);
 
-        // Nearest region lookup
-        let bestR = 0;
-        let bestD = Infinity;
-        for (let dy = -2; dy <= 2; dy++) {
-          const cy = gy + dy;
-          if (cy < 0 || cy >= gridW) continue;
-          for (let dx = -2; dx <= 2; dx++) {
-            const cx = gx + dx;
-            if (cx < 0 || cx >= gridW) continue;
-            for (const r of grid[cy * gridW + cx]) {
-              const d = (points[r].x - wx) ** 2 + (points[r].y - wy) ** 2;
-              if (d < bestD) { bestD = d; bestR = r; }
-            }
-          }
-        }
+        const bestR = spatialGrid.nearestRegion(wx, wy);
 
         terrainGrid[i] = TERRAIN_INDEX[regionTerrain[bestR]];
         if (regionGrid) regionGrid[i] = bestR;
 
-        // Per-pixel elevation (same formula as TopographyGenerator._computeElevation)
-        const fmx = wx + offset;
-        const fmy = wy + offset;
-        const nx = fmx / totalSize - 0.5;
-        const ny = fmy / totalSize - 0.5;
-        const n =
-          0.60 * elevNoise(nx * 2,  ny * 2)  +
-          0.25 * elevNoise(nx * 4,  ny * 4)  +
-          0.10 * elevNoise(nx * 8,  ny * 8)  +
-          0.05 * elevNoise(nx * 16, ny * 16);
-        const normalised = (n + 1) / 2;
-
-        const dmx = Math.abs(fmx - halfTotal) / halfTotal;
-        const dmy = Math.abs(fmy - halfTotal) / halfTotal;
-        const dist = Math.max(dmx, dmy);
-        const maskNoise = (elevNoise(nx * 1.5, ny * 1.5) + 1) / 2;
-        const islandMask = 1 - Math.pow(dist * (1.15 - 0.25 * maskNoise), 2.5);
-
-        elevationGrid[i] = Math.max(0, Math.min(1, normalised * 0.45 + islandMask * 0.55));
+        // Per-pixel elevation (shared formula via TopographyGenerator.elevationAt)
+        elevationGrid[i] = topo.elevationAt(wx, wy, elevNoise);
       }
     }
 
@@ -283,89 +233,4 @@ export class GroundRenderer {
     return pixels;
   }
 
-  /**
-   * Draw rivers onto an existing pixel buffer.
-   * Uses Bresenham thick lines between region centers along each river path,
-   * with width scaled by log(flowAccumulation).
-   */
-  renderRivers(
-    pixels: Uint32Array,
-    topo: TopographyGenerator,
-    hydro: HydrologyGenerator,
-    resolution: number,
-  ): void {
-    const { points } = topo.mesh;
-    const scale = topo.size / resolution;
-    const N = resolution;
-
-    // River color palette: darker = deeper/wider
-    const RIVER_COLORS = [
-      packABGR(0x2a, 0x70, 0x90),  // narrow streams
-      packABGR(0x28, 0x65, 0x88),
-      packABGR(0x25, 0x5c, 0x80),  // wide rivers
-    ];
-
-    // Normalize flow in log space: map [RIVER_MIN..maxAccum] → [0..1]
-    const RIVER_MIN = 25;
-    const maxAccum = Math.max(RIVER_MIN + 1, Math.max(...Array.from(hydro.flowAccumulation)));
-    const logMin = Math.log(RIVER_MIN);
-    const logRange = Math.log(maxAccum) - logMin;
-
-    for (const path of hydro.rivers) {
-      for (let si = 0; si < path.length - 1; si++) {
-        const rA = path[si];
-        const rB = path[si + 1];
-
-        // World coords → pixel coords
-        const x0 = Math.floor(points[rA].x / scale);
-        const y0 = Math.floor(points[rA].y / scale);
-        const x1 = Math.floor(points[rB].x / scale);
-        const y1 = Math.floor(points[rB].y / scale);
-
-        // Width from flow accumulation (1–10 pixels), log-space normalization, 10% steps
-        const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
-        const t = Math.min(1, (Math.log(flow) - logMin) / logRange);
-        const width = Math.max(1, Math.ceil(t * 10));
-
-        // Color: darker for wider rivers
-        const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));
-        const color = RIVER_COLORS[ci];
-
-        // Bresenham line with thickness
-        this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color);
-      }
-    }
-  }
-
-  private _drawThickLine(
-    pixels: Uint32Array, N: number,
-    x0: number, y0: number, x1: number, y1: number,
-    width: number, color: number,
-  ): void {
-    const dx = Math.abs(x1 - x0);
-    const dy = Math.abs(y1 - y0);
-    const sx = x0 < x1 ? 1 : -1;
-    const sy = y0 < y1 ? 1 : -1;
-    let err = dx - dy;
-    let cx = x0, cy = y0;
-    const r = (width - 1) >> 1; // half-width for stamping
-
-    while (true) {
-      // Stamp a filled square of radius r
-      for (let oy = -r; oy <= r; oy++) {
-        const py = cy + oy;
-        if (py < 0 || py >= N) continue;
-        for (let ox = -r; ox <= r; ox++) {
-          const px = cx + ox;
-          if (px < 0 || px >= N) continue;
-          pixels[py * N + px] = color;
-        }
-      }
-
-      if (cx === x1 && cy === y1) break;
-      const e2 = 2 * err;
-      if (e2 > -dy) { err -= dy; cx += sx; }
-      if (e2 < dx)  { err += dx; cy += sy; }
-    }
-  }
 }

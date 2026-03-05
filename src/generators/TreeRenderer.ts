@@ -1,13 +1,9 @@
 import PoissonDiskSampling from 'fast-2d-poisson-disk-sampling';
-import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
+import { TopographyGenerator } from './TopographyGenerator';
 import { HydrologyGenerator } from './HydrologyGenerator';
 import { packABGR } from './TerrainPalettes';
-
-// ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-const LIGHT_DIR_X = -0.707;
-const LIGHT_DIR_Y = -0.707;
+import { mulberry32, LIGHT_DIR_X, LIGHT_DIR_Y, RIVER_THRESHOLD } from './utils';
+import { SpatialGrid } from './SpatialGrid';
 const MIN_TREE_SPACING = 4;
 const MAX_TREE_SPACING = 12;
 const MIN_MOISTURE = 0.15;
@@ -216,23 +212,11 @@ export class TreeRenderer {
     const N = resolution;
     const scale = topo.size / N;
     const { points } = topo.mesh;
-    const numRegions = topo.mesh.numRegions;
 
     // ------------------------------------------------------------------
-    // 1. Spatial grid for nearest-region lookup (same as GroundRenderer)
+    // 1. Spatial grid for nearest-region lookup
     // ------------------------------------------------------------------
-    const cellSize = 40;
-    const gridW = Math.ceil(topo.size / cellSize);
-    const grid: number[][] = new Array(gridW * gridW);
-    for (let i = 0; i < grid.length; i++) grid[i] = [];
-
-    for (let r = 0; r < numRegions; r++) {
-      const gx = Math.min(Math.floor(points[r].x / cellSize), gridW - 1);
-      const gy = Math.min(Math.floor(points[r].y / cellSize), gridW - 1);
-      if (gx >= 0 && gy >= 0) {
-        grid[gy * gridW + gx].push(r);
-      }
-    }
+    const spatialGrid = new SpatialGrid(points, topo.size);
 
     // ------------------------------------------------------------------
     // 2. Build river exclusion mask
@@ -269,23 +253,7 @@ export class TreeRenderer {
       // Find nearest region
       const wx = (px + 0.5) * scale;
       const wy = (py + 0.5) * scale;
-      const gx = Math.floor(wx / cellSize);
-      const gyCur = Math.floor(wy / cellSize);
-
-      let bestR = 0;
-      let bestD = Infinity;
-      for (let dy = -2; dy <= 2; dy++) {
-        const cy = gyCur + dy;
-        if (cy < 0 || cy >= gridW) continue;
-        for (let dx = -2; dx <= 2; dx++) {
-          const cx = gx + dx;
-          if (cx < 0 || cx >= gridW) continue;
-          for (const r of grid[cy * gridW + cx]) {
-            const d = (points[r].x - wx) ** 2 + (points[r].y - wy) ** 2;
-            if (d < bestD) { bestD = d; bestR = r; }
-          }
-        }
-      }
+      const bestR = spatialGrid.nearestRegion(wx, wy);
 
       // Terrain check: lowland, highland, and rock (up to snow line)
       const terrain = topo.terrainType[bestR];
@@ -378,9 +346,8 @@ export class TreeRenderer {
     const scale = topo.size / N;
     const { points } = topo.mesh;
 
-    const RIVER_MIN = 25;
-    const maxAccum = Math.max(RIVER_MIN + 1, Math.max(...Array.from(hydro.flowAccumulation)));
-    const logMin = Math.log(RIVER_MIN);
+    const maxAccum = Math.max(RIVER_THRESHOLD + 1, Math.max(...Array.from(hydro.flowAccumulation)));
+    const logMin = Math.log(RIVER_THRESHOLD);
     const logRange = Math.log(maxAccum) - logMin;
 
     for (const path of hydro.rivers) {
@@ -392,7 +359,7 @@ export class TreeRenderer {
         const x1 = Math.floor(points[rB].x / scale);
         const y1 = Math.floor(points[rB].y / scale);
 
-        const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
+        const flow = Math.max(RIVER_THRESHOLD, hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
         const t = Math.min(1, (Math.log(flow) - logMin) / logRange);
         const riverWidth = Math.max(1, Math.ceil(t * 6));
         const totalWidth = riverWidth + RIVER_BUFFER * 2;

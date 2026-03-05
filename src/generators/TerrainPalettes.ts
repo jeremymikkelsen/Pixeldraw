@@ -1,4 +1,4 @@
-import type { TerrainType } from './TopographyGenerator';
+import type { TerrainType } from './utils';
 
 export interface TerrainPalette {
   base: number[];      // RGB hex colors, ordered dark → light (3-5 shades)

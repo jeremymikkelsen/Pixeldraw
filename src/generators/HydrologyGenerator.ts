@@ -11,17 +11,15 @@
  *  6. Soil moisture (precip + river proximity + drainage position)
  */
 
-import { TopographyGenerator, TerrainType, mulberry32 } from './TopographyGenerator';
+import { TopographyGenerator } from './TopographyGenerator';
 import { DualMesh, Point } from './DualMesh';
+import { type TerrainType, mulberry32, isWater, RIVER_THRESHOLD } from './utils';
 
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
 const OCEAN_RECHARGE = 0.04;
 const UPLIFT_FACTOR = 2.5;
 const BASE_PRECIP_RATE = 0.14;
-
-// -- River extraction --
-const RIVER_THRESHOLD = 25;
 
 // -- Soil moisture --
 const PRECIP_WEIGHT = 0.55;
@@ -75,11 +73,6 @@ class MinHeap {
       i = smallest;
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-function isWater(t: TerrainType): boolean {
-  return t === 'ocean' || t === 'water';
 }
 
 // ---------------------------------------------------------------------------

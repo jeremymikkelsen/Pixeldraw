@@ -15,39 +15,10 @@
 import PoissonDiskSampling from 'fast-2d-poisson-disk-sampling';
 import { createNoise2D } from 'simplex-noise';
 import { DualMesh, Point } from './DualMesh';
+import { mulberry32, MAP_SCALE, type TerrainType } from './utils';
 
-// ---------------------------------------------------------------------------
-// Seeded PRNG (Mulberry32) — returns a () => number factory
-// ---------------------------------------------------------------------------
-export function mulberry32(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s += 0x6d2b79f5;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
-    return ((t ^ (t >>> 14)) >>> 0) / 0x100000000;
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Terrain types & colours (pixel-art palette)
-// ---------------------------------------------------------------------------
-export type TerrainType = 'ocean' | 'coast' | 'lowland' | 'highland' | 'rock' | 'cliff' | 'water';
-
-const TERRAIN_COLORS: Record<TerrainType, number> = {
-  ocean:    0x2a4a6b,
-  water:    0x3a7ca5,
-  coast:    0x7aac6a,
-  lowland:  0x4a8c40,
-  highland: 0x3a6c30,
-  rock:     0x8c8070,
-  cliff:    0xa09080,
-};
-
-// ---------------------------------------------------------------------------
-// TopographyGenerator
-// ---------------------------------------------------------------------------
-export const MAP_SCALE = 1;
+// Re-export for downstream consumers
+export { mulberry32, MAP_SCALE, type TerrainType } from './utils';
 
 export class TopographyGenerator {
   readonly size: number;
@@ -61,63 +32,6 @@ export class TopographyGenerator {
     this.size = size;
     this.seed = seed;
     this._build();
-  }
-
-  // -------------------------------------------------------------------------
-  // Public: rasterize the terrain data into a pixel buffer
-  // -------------------------------------------------------------------------
-  rasterize(resolution: number): Uint32Array {
-    const pixels = new Uint32Array(resolution * resolution);
-    const scale = this.size / resolution;
-    const { points } = this.mesh;
-    const numRegions = this.mesh.numRegions;
-
-    // Spatial grid for fast nearest-region lookup
-    const cellSize = 40;
-    const gridW = Math.ceil(this.size / cellSize);
-    const grid: number[][] = new Array(gridW * gridW);
-    for (let i = 0; i < grid.length; i++) grid[i] = [];
-
-    for (let r = 0; r < numRegions; r++) {
-      const gx = Math.min(Math.floor(points[r].x / cellSize), gridW - 1);
-      const gy = Math.min(Math.floor(points[r].y / cellSize), gridW - 1);
-      if (gx >= 0 && gy >= 0) {
-        grid[gy * gridW + gx].push(r);
-      }
-    }
-
-    for (let py = 0; py < resolution; py++) {
-      const wy = (py + 0.5) * scale;
-      const gy = Math.floor(wy / cellSize);
-      for (let px = 0; px < resolution; px++) {
-        const wx = (px + 0.5) * scale;
-        const gx = Math.floor(wx / cellSize);
-
-        let bestR = 0;
-        let bestD = Infinity;
-        for (let dy = -2; dy <= 2; dy++) {
-          const cy = gy + dy;
-          if (cy < 0 || cy >= gridW) continue;
-          for (let dx = -2; dx <= 2; dx++) {
-            const cx = gx + dx;
-            if (cx < 0 || cx >= gridW) continue;
-            for (const r of grid[cy * gridW + cx]) {
-              const d = (points[r].x - wx) ** 2 + (points[r].y - wy) ** 2;
-              if (d < bestD) { bestD = d; bestR = r; }
-            }
-          }
-        }
-
-        // Pack as ABGR for little-endian Uint32 → ImageData compatibility
-        const color = TERRAIN_COLORS[this.terrainType[bestR]];
-        const r = (color >> 16) & 0xff;
-        const g = (color >> 8) & 0xff;
-        const b = color & 0xff;
-        pixels[py * resolution + px] = (255 << 24) | (b << 16) | (g << 8) | r;
-      }
-    }
-
-    return pixels;
   }
 
   // -------------------------------------------------------------------------
@@ -159,41 +73,49 @@ export class TopographyGenerator {
     return [...interior, ...boundary];
   }
 
+  /**
+   * Compute raw elevation at an arbitrary world-space (x, y).
+   * Uses multi-octave simplex noise + island mask — the same formula used
+   * for per-region elevation but without the edge fade (which is only
+   * applied at the region level).
+   *
+   * @param noise A noise2D function seeded with `seed ^ 0xdeadbeef`.
+   */
+  elevationAt(x: number, y: number, noise: (x: number, y: number) => number): number {
+    const totalSize = this.size * MAP_SCALE;
+    const offset = (totalSize - this.size) / 2;
+    const halfTotal = totalSize / 2;
+
+    const wx = x + offset;
+    const wy = y + offset;
+    const nx = wx / totalSize - 0.5;
+    const ny = wy / totalSize - 0.5;
+
+    const n =
+      0.60 * noise(nx * 2,  ny * 2)  +
+      0.25 * noise(nx * 4,  ny * 4)  +
+      0.10 * noise(nx * 8,  ny * 8)  +
+      0.05 * noise(nx * 16, ny * 16);
+    const normalised = (n + 1) / 2;
+
+    const dx = Math.abs(wx - halfTotal) / halfTotal;
+    const dy = Math.abs(wy - halfTotal) / halfTotal;
+    const dist = Math.max(dx, dy);
+    const maskNoise = (noise(nx * 1.5, ny * 1.5) + 1) / 2;
+    const islandMask = 1 - Math.pow(dist * (1.15 - 0.25 * maskNoise), 2.5);
+
+    return Math.max(0, Math.min(1, normalised * 0.45 + islandMask * 0.55));
+  }
+
   private _computeElevation(): Float32Array {
     const { numRegions, points } = this.mesh;
     const rng = mulberry32(this.seed ^ 0xdeadbeef);
     const noise = createNoise2D(rng);
     const elevation = new Float32Array(numRegions);
 
-    const totalSize = this.size * MAP_SCALE;
-    const offset = (totalSize - this.size) / 2;
-
     for (let r = 0; r < numRegions; r++) {
       const { x, y } = points[r];
-
-      // Shift into full-map coordinates
-      const wx = x + offset;
-      const wy = y + offset;
-
-      // Multi-octave noise (scaled to full map)
-      const nx = wx / totalSize - 0.5;
-      const ny = wy / totalSize - 0.5;
-      const n =
-        0.60 * noise(nx * 2,  ny * 2)  +
-        0.25 * noise(nx * 4,  ny * 4)  +
-        0.10 * noise(nx * 8,  ny * 8)  +
-        0.05 * noise(nx * 16, ny * 16);
-      const normalised = (n + 1) / 2; // 0..1
-
-      // Island mask relative to full map centre
-      const halfTotal = totalSize / 2;
-      const dx = Math.abs(wx - halfTotal) / halfTotal;
-      const dy = Math.abs(wy - halfTotal) / halfTotal;
-      const dist = Math.max(dx, dy);
-      const maskNoise = (noise(nx * 1.5, ny * 1.5) + 1) / 2;
-      const islandMask = 1 - Math.pow(dist * (1.15 - 0.25 * maskNoise), 2.5);
-
-      let e = Math.max(0, Math.min(1, normalised * 0.45 + islandMask * 0.55));
+      let e = this.elevationAt(x, y, noise);
 
       // Force ocean at map edges — smooth fade over outer 60px
       const edgeDist = Math.min(x, y, this.size - x, this.size - y);

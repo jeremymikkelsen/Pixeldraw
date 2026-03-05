@@ -1,12 +1,12 @@
-import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
+import { TopographyGenerator } from './TopographyGenerator';
 import { HydrologyGenerator } from './HydrologyGenerator';
 import { packABGR } from './TerrainPalettes';
+import { mulberry32, RIVER_THRESHOLD } from './utils';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 const MAX_RIVER_WIDTH = 6;
-const RIVER_MIN_FLOW = 25;
 
 // Elevation thresholds for turbulence (higher = steeper terrain = rapids)
 const RAPIDS_ELEV = 0.55;     // highland and above
@@ -101,9 +101,9 @@ export class RiverAnimator {
     const scale = topo.size / N;
     const { points } = topo.mesh;
 
-    const maxAccum = Math.max(RIVER_MIN_FLOW + 1,
+    const maxAccum = Math.max(RIVER_THRESHOLD + 1,
       Math.max(...Array.from(hydro.flowAccumulation)));
-    const logMin = Math.log(RIVER_MIN_FLOW);
+    const logMin = Math.log(RIVER_THRESHOLD);
     const logRange = Math.log(maxAccum) - logMin;
 
     // Set to deduplicate pixels (rivers can overlap at confluences)
@@ -130,7 +130,7 @@ export class RiverAnimator {
         const elevation = (topo.elevation[rA] + topo.elevation[rB]) / 2;
 
         // Width
-        const flow = Math.max(RIVER_MIN_FLOW,
+        const flow = Math.max(RIVER_THRESHOLD,
           hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
         const t = Math.min(1, (Math.log(flow) - logMin) / logRange);
         const width = Math.max(1, Math.ceil(t * MAX_RIVER_WIDTH));

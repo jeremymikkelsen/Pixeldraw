@@ -17,15 +17,15 @@ import { type TerrainType, mulberry32, isWater, RIVER_THRESHOLD } from './utils'
 
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
-const OCEAN_RECHARGE = 0.04;
-const UPLIFT_FACTOR = 2.5;
-const BASE_PRECIP_RATE = 0.14;
+const OCEAN_RECHARGE = 0.08;
+const UPLIFT_FACTOR = 8.0;
+const BASE_PRECIP_RATE = 0.04;
 
 // -- Soil moisture --
-const PRECIP_WEIGHT = 0.55;
-const RIVER_WEIGHT = 0.30;
-const DRAINAGE_WEIGHT = 0.15;
-const RIVER_SPREAD_DIST = 4;
+const PRECIP_WEIGHT = 0.65;
+const RIVER_WEIGHT = 0.25;
+const DRAINAGE_WEIGHT = 0.10;
+const RIVER_SPREAD_DIST = 6;
 
 // ---------------------------------------------------------------------------
 // Inline binary min-heap
@@ -260,6 +260,11 @@ export class HydrologyGenerator {
     for (let r = 0; r < N; r++) if (precipitation[r] > maxP) maxP = precipitation[r];
     if (maxP > 0) {
       for (let r = 0; r < N; r++) precipitation[r] /= maxP;
+    }
+
+    // Contrast curve: steepen the falloff so dry regions are visibly drier
+    for (let r = 0; r < N; r++) {
+      precipitation[r] = Math.pow(precipitation[r], 2.0);
     }
 
     return precipitation;
@@ -500,11 +505,14 @@ export class HydrologyGenerator {
         moisture[r] = 1.0;
         continue;
       }
-      moisture[r] = Math.min(1, Math.max(0,
-        precip[r] * PRECIP_WEIGHT +
+      const raw = precip[r] * PRECIP_WEIGHT +
         riverProx[r] * RIVER_WEIGHT +
-        drainage[r] * DRAINAGE_WEIGHT,
-      ));
+        drainage[r] * DRAINAGE_WEIGHT;
+      // Apply S-curve contrast to push values toward extremes
+      const clamped = Math.min(1, Math.max(0, raw));
+      moisture[r] = clamped < 0.5
+        ? 2 * clamped * clamped
+        : 1 - 2 * (1 - clamped) * (1 - clamped);
     }
 
     return moisture;

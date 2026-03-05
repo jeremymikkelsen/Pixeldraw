@@ -124,6 +124,9 @@ export class TopographyGenerator {
         e *= Math.max(0, edgeDist / EDGE_FADE);
       }
 
+      // Parabolic reshaping: widen lowlands, steepen mountains
+      e = Math.pow(e, 2.2);
+
       elevation[r] = e;
     }
 
@@ -136,12 +139,12 @@ export class TopographyGenerator {
 
     for (let r = 0; r < numRegions; r++) {
       const e = this.elevation[r];
-      if (e < 0.25)      terrain[r] = 'ocean';
-      else if (e < 0.32) terrain[r] = 'water';
-      else if (e < 0.38) terrain[r] = 'coast';
-      else if (e < 0.55) terrain[r] = 'lowland';
-      else if (e < 0.70) terrain[r] = 'highland';
-      else if (e < 0.82) terrain[r] = 'rock';
+      if (e < 0.05)      terrain[r] = 'ocean';
+      else if (e < 0.08) terrain[r] = 'water';
+      else if (e < 0.12) terrain[r] = 'coast';
+      else if (e < 0.25) terrain[r] = 'lowland';
+      else if (e < 0.45) terrain[r] = 'highland';
+      else if (e < 0.65) terrain[r] = 'rock';
       else               terrain[r] = 'cliff';
     }
 

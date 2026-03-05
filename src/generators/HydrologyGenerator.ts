@@ -17,8 +17,8 @@ import { DualMesh, Point } from './DualMesh';
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
 const OCEAN_RECHARGE = 0.06;
-const UPLIFT_FACTOR = 12.0;
-const BASE_PRECIP_RATE = 0.015;
+const UPLIFT_FACTOR = 4.0;
+const BASE_PRECIP_RATE = 0.008;
 const ELEV_CURVE_EXP = 2.2; // must match TopographyGenerator pow() exponent
 
 // -- River extraction --
@@ -254,7 +254,8 @@ export class HydrologyGenerator {
       }
       if (westCount > 0) avgWestElev /= westCount;
 
-      const elevGain = Math.max(0, rawElev - avgWestElev);
+      // Only count significant slopes (> 0.02) as orographic uplift
+      const elevGain = Math.max(0, rawElev - avgWestElev - 0.02);
       const precipRate = BASE_PRECIP_RATE + elevGain * UPLIFT_FACTOR;
       let precipAmount = airMoist[r] * precipRate;
       precipAmount = Math.min(precipAmount, airMoist[r] * 0.7);

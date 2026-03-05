@@ -16,7 +16,6 @@ import { DualMesh, Point } from './DualMesh';
 
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
-const OCEAN_RECHARGE = 0.03;
 const UPLIFT_FACTOR = 4.0;
 const BASE_PRECIP_RATE = 0.008;
 const ELEV_CURVE_EXP = 2.2; // must match TopographyGenerator pow() exponent
@@ -233,9 +232,10 @@ export class HydrologyGenerator {
         airMoist[r] = isWater(terrain[r]) ? BASE_MOISTURE : BASE_MOISTURE * 0.3;
       }
 
-      // Ocean/water recharges air moisture
+      // Ocean/water fully saturates air moisture — any ocean crossing
+      // produces the same result regardless of ocean width
       if (isWater(terrain[r])) {
-        airMoist[r] = Math.min(BASE_MOISTURE, airMoist[r] + OCEAN_RECHARGE);
+        airMoist[r] = BASE_MOISTURE;
         airMoistureSnapshot[r] = airMoist[r];
         precipitation[r] = 0;
         continue;

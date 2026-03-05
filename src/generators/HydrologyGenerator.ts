@@ -18,7 +18,7 @@ import { DualMesh, Point } from './DualMesh';
 const BASE_MOISTURE = 1.0;
 const OCEAN_RECHARGE = 0.06;
 const UPLIFT_FACTOR = 12.0;
-const BASE_PRECIP_RATE = 0.04;
+const BASE_PRECIP_RATE = 0.015;
 const ELEV_CURVE_EXP = 2.2; // must match TopographyGenerator pow() exponent
 
 // -- River extraction --

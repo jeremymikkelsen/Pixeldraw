@@ -124,13 +124,13 @@ export class MountainRenderer {
   // Find peaks: local elevation maxima above snow line
   // -----------------------------------------------------------------------
   private _findPeaks(elevGrid: Float32Array, N: number, rng: () => number): Peak[] {
-    const peaks: Peak[] = [];
-    const SEARCH_RADIUS = 20; // pixels — minimum distance between peaks
+    const SEARCH_RADIUS = 80; // pixels — minimum distance between peaks
+    const MAX_PEAKS = 8;      // cap total number of peaks
     const placed: Peak[] = [];
 
     // Collect all pixels above snow line, sort by elevation descending
     const candidates: { px: number; py: number; elev: number }[] = [];
-    const step = 4; // sample every 4th pixel for speed
+    const step = 6; // sample every 6th pixel for speed
     for (let py = step; py < N - step; py += step) {
       for (let px = step; px < N - step; px += step) {
         const elev = elevGrid[py * N + px];
@@ -142,6 +142,8 @@ export class MountainRenderer {
     candidates.sort((a, b) => b.elev - a.elev);
 
     for (const c of candidates) {
+      if (placed.length >= MAX_PEAKS) break;
+
       // Check distance from already placed peaks
       let tooClose = false;
       for (const p of placed) {
@@ -155,7 +157,7 @@ export class MountainRenderer {
       if (tooClose) continue;
 
       // Peak size based on elevation (higher = larger peak)
-      const size = 8 + Math.floor((c.elev - SNOW_LINE) / (1 - SNOW_LINE) * 20);
+      const size = 20 + Math.floor((c.elev - SNOW_LINE) / (1 - SNOW_LINE) * 40);
 
       placed.push({ px: c.px, py: c.py, elevation: c.elev, size });
     }

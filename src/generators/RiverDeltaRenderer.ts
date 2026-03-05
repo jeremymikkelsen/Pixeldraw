@@ -33,12 +33,18 @@ export class RiverDeltaRenderer {
     const { points } = topo.mesh;
 
     // Find river mouths: last land region before ocean in each river
+    // ONLY rivers that actually terminate in ocean get deltas (not confluences)
     const mouths: { px: number; py: number; flow: number; dirX: number; dirY: number }[] = [];
 
     for (const path of hydro.rivers) {
       if (path.length < 5) continue; // only rivers of meaningful length
 
-      // Find the river mouth (last land cell)
+      // Check that the river actually ends in ocean
+      const lastRegion = path[path.length - 1];
+      const lastTerrain = topo.terrainType[lastRegion];
+      if (lastTerrain !== 'ocean' && lastTerrain !== 'water') continue;
+
+      // Find the river mouth (last land cell before ocean)
       let mouthIdx = -1;
       for (let i = path.length - 1; i >= 0; i--) {
         const t = topo.terrainType[path[i]];

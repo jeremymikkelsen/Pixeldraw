@@ -8,8 +8,8 @@ import { CoastalRenderer } from '../generators/CoastalRenderer';
 import { MountainRenderer } from '../generators/MountainRenderer';
 import { RiverDeltaRenderer } from '../generators/RiverDeltaRenderer';
 
-const MAP_SIZE = 4096;
-const PIXEL_RESOLUTION = 2048;
+const MAP_SIZE = 3072;
+const PIXEL_RESOLUTION = 1536;
 
 const SCROLL_SPEED = 300;
 const ZOOM_SPEED = 0.03;
@@ -351,16 +351,19 @@ export class MapScene extends Phaser.Scene {
     const deltaRenderer = new RiverDeltaRenderer();
     deltaRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
 
-    // Trees (before rivers so river animator can overwrite)
+    // Static rivers (drawn before trees so tree canopies overlay rivers)
+    renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
+
+    // Trees (returns mask of pixels covered by tree sprites)
     const treeRenderer = new TreeRenderer();
-    treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
+    const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
 
     // Rocky crags and mountain peaks (after trees so peaks overlay trees)
     const mountainRenderer = new MountainRenderer();
     mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed);
 
-    // River animator pre-computes pixel positions; draws first frame
-    const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed);
+    // River animator pre-computes pixel positions; skips tree-covered pixels
+    const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask);
     riverAnimator.animate(pixels, 0);
 
     // Coastal animation first frame

@@ -135,8 +135,8 @@ export class TopographyGenerator {
 
     const pds = new PoissonDiskSampling({
       shape: [this.size, this.size],
-      minDistance: 18,
-      maxDistance: 36,
+      minDistance: 28,
+      maxDistance: 56,
       tries: 20,
     }, rng);
 
@@ -146,7 +146,7 @@ export class TopographyGenerator {
     // Add a ring of ghost points just outside the canvas so that all
     // interior Voronoi cells are fully enclosed (no clipped/open polygons).
     const boundary: Point[] = [];
-    const step = 24;
+    const step = 36;
     const pad = -step / 2;
     const far = this.size + step / 2;
     for (let v = pad; v <= far; v += step) {

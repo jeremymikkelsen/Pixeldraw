@@ -74,14 +74,17 @@ const LOG_DARK = packABGR(0x48, 0x38, 0x28);
 export class RiverAnimator {
   private _pixels: RiverPixel[] = [];
   private _N: number;
+  private _treeMask: Uint8Array | null = null;
 
   constructor(
     topo: TopographyGenerator,
     hydro: HydrologyGenerator,
     resolution: number,
     seed: number,
+    treeMask?: Uint8Array,
   ) {
     this._N = resolution;
+    this._treeMask = treeMask || null;
     this._build(topo, hydro, resolution, seed);
   }
 
@@ -197,8 +200,13 @@ export class RiverAnimator {
   animate(pixels: Uint32Array, timeMs: number): void {
     const timeSec = timeMs / 1000;
 
+    const treeMask = this._treeMask;
+
     for (let i = 0; i < this._pixels.length; i++) {
       const rp = this._pixels[i];
+
+      // Skip pixels covered by tree canopy
+      if (treeMask && treeMask[rp.idx]) continue;
 
       // Static decorations
       if (rp.type === PixelType.Rock) {

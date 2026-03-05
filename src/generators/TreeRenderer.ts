@@ -256,7 +256,7 @@ export class TreeRenderer {
     hydro: HydrologyGenerator,
     resolution: number,
     seed: number,
-  ): void {
+  ): Uint8Array {
     const rng = mulberry32(seed ^ 0x7ee0000);
     const N = resolution;
     const scale = topo.size / N;
@@ -407,6 +407,9 @@ export class TreeRenderer {
     // ------------------------------------------------------------------
     trees.sort((a, b) => a.py - b.py);
 
+    // Tree mask: tracks which pixels are covered by tree sprites
+    const treeMask = new Uint8Array(N * N);
+
     // ------------------------------------------------------------------
     // 6. Shadow pass
     // ------------------------------------------------------------------
@@ -415,11 +418,13 @@ export class TreeRenderer {
     }
 
     // ------------------------------------------------------------------
-    // 7. Sprite pass
+    // 7. Sprite pass (also marks tree mask)
     // ------------------------------------------------------------------
     for (const tree of trees) {
-      this._stampSprite(pixels, N, tree);
+      this._stampSprite(pixels, N, tree, treeMask);
     }
+
+    return treeMask;
   }
 
   // -----------------------------------------------------------------------
@@ -521,7 +526,7 @@ export class TreeRenderer {
   // -----------------------------------------------------------------------
   // Stamp tree sprite with directional lighting
   // -----------------------------------------------------------------------
-  private _stampSprite(pixels: Uint32Array, N: number, tree: TreeInstance): void {
+  private _stampSprite(pixels: Uint32Array, N: number, tree: TreeInstance, treeMask?: Uint8Array): void {
     const { px: tx, py: ty, template, palette, flipped } = tree;
     const { w, h, data } = template;
 
@@ -576,7 +581,9 @@ export class TreeRenderer {
         const r = (color >> 16) & 0xff;
         const g = (color >> 8) & 0xff;
         const b = color & 0xff;
-        pixels[py * N + px] = packABGR(r, g, b);
+        const idx = py * N + px;
+        pixels[idx] = packABGR(r, g, b);
+        if (treeMask) treeMask[idx] = 1;
       }
     }
   }

@@ -298,10 +298,10 @@ export class TreeRenderer {
       const moisture = hydro.moisture[bestR];
       if (moisture < MIN_MOISTURE) continue;
 
-      // Elevation-based density: sparse at low elevations, dense at mid/high
-      // Remap elevation [0.12..0.45] → density factor [0.15..1.0] (adjusted for pow(2.2) curve)
-      const elevT = Math.min(1, (elev - 0.12) / (0.45 - 0.12));
-      const elevDensity = 0.15 + 0.85 * elevT * elevT;  // quadratic ramp, dense at top
+      // Elevation-based density: dense in lowlands, thinning toward treeline
+      // Remap elevation [0.12..0.61] → density factor [1.0..0.15]
+      const elevT = Math.min(1, (elev - 0.12) / (SNOW_LINE - 0.12));
+      const elevDensity = 1.0 - 0.85 * elevT * elevT;  // quadratic falloff, dense at bottom
 
       // Combined thinning: elevation density × moisture
       const keepChance = elevDensity * (moisture * 0.7 + 0.3);

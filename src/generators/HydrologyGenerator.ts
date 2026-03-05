@@ -17,17 +17,17 @@ import { DualMesh, Point } from './DualMesh';
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
 const OCEAN_RECHARGE = 0.04;
-const UPLIFT_FACTOR = 2.5;
-const BASE_PRECIP_RATE = 0.14;
+const UPLIFT_FACTOR = 5.0;
+const BASE_PRECIP_RATE = 0.06;
 
 // -- River extraction --
 const RIVER_THRESHOLD = 25;
 
 // -- Soil moisture --
-const PRECIP_WEIGHT = 0.55;
-const RIVER_WEIGHT = 0.30;
-const DRAINAGE_WEIGHT = 0.15;
-const RIVER_SPREAD_DIST = 4;
+const PRECIP_WEIGHT = 0.65;
+const RIVER_WEIGHT = 0.25;
+const DRAINAGE_WEIGHT = 0.10;
+const RIVER_SPREAD_DIST = 6;
 
 // ---------------------------------------------------------------------------
 // Inline binary min-heap
@@ -267,6 +267,11 @@ export class HydrologyGenerator {
     for (let r = 0; r < N; r++) if (precipitation[r] > maxP) maxP = precipitation[r];
     if (maxP > 0) {
       for (let r = 0; r < N; r++) precipitation[r] /= maxP;
+    }
+
+    // Contrast curve: push values away from the midpoint for more visible variation
+    for (let r = 0; r < N; r++) {
+      precipitation[r] = Math.pow(precipitation[r], 0.5);
     }
 
     return precipitation;

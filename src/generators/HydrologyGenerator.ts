@@ -106,8 +106,8 @@ export class HydrologyGenerator {
     // Step 0: adjacency
     const adj = this._buildAdjacency(mesh);
 
-    // Step 1: precipitation
-    const precipitation = this._computePrecipitation(
+    // Step 1: precipitation + air moisture (for rain shadow)
+    const { precipitation, airMoisture } = this._computePrecipitation(
       mesh.points, elevation, terrainType, adj, N, rng,
     );
 
@@ -125,9 +125,9 @@ export class HydrologyGenerator {
     // Step 5: rivers
     const rivers = this._extractRivers(flowDirection, flowAccumulation, terrainType, N);
 
-    // Step 6: moisture
+    // Step 6: moisture (uses airMoisture for rain shadow signal)
     const moisture = this._computeMoisture(
-      precipitation, flowAccumulation, rivers, adj, terrainType, N,
+      precipitation, airMoisture, flowAccumulation, rivers, adj, terrainType, N,
     );
 
     (this as any).precipitation = precipitation;
@@ -195,14 +195,15 @@ export class HydrologyGenerator {
     adj: number[][],
     N: number,
     rng: () => number,
-  ): Float32Array {
+  ): { precipitation: Float32Array; airMoisture: Float32Array } {
     // Sort regions west-to-east
     const sorted = new Array(N);
     for (let i = 0; i < N; i++) sorted[i] = i;
     sorted.sort((a: number, b: number) => points[a].x - points[b].x);
 
-    const airMoisture = new Float32Array(N);
+    const airMoist = new Float32Array(N);
     const precipitation = new Float32Array(N);
+    const airMoistureSnapshot = new Float32Array(N); // snapshot BEFORE extraction
 
     for (let si = 0; si < N; si++) {
       const r = sorted[si];
@@ -220,22 +221,26 @@ export class HydrologyGenerator {
         const dist = Math.sqrt(dx * dx + dy * dy);
         const alignment = dx / dist; // 1.0 = directly west
         const w = alignment;
-        moistureSum += airMoisture[n] * w;
+        moistureSum += airMoist[n] * w;
         totalWeight += w;
       }
 
       if (totalWeight > 0) {
-        airMoisture[r] = moistureSum / totalWeight;
+        airMoist[r] = moistureSum / totalWeight;
       } else {
-        airMoisture[r] = isWater(terrain[r]) ? BASE_MOISTURE : BASE_MOISTURE * 0.3;
+        airMoist[r] = isWater(terrain[r]) ? BASE_MOISTURE : BASE_MOISTURE * 0.3;
       }
 
       // Ocean/water recharges air moisture
       if (isWater(terrain[r])) {
-        airMoisture[r] = Math.min(BASE_MOISTURE, airMoisture[r] + OCEAN_RECHARGE);
+        airMoist[r] = Math.min(BASE_MOISTURE, airMoist[r] + OCEAN_RECHARGE);
+        airMoistureSnapshot[r] = airMoist[r];
         precipitation[r] = 0;
         continue;
       }
+
+      // Snapshot air moisture BEFORE extraction — this is the rain shadow signal
+      airMoistureSnapshot[r] = airMoist[r];
 
       // Orographic uplift: use pre-curve elevation so lowland gradients aren't crushed
       const rawElev = Math.pow(elevation[r], 1 / ELEV_CURVE_EXP);
@@ -252,31 +257,27 @@ export class HydrologyGenerator {
 
       const elevGain = Math.max(0, rawElev - avgWestElev);
       const precipRate = BASE_PRECIP_RATE + elevGain * UPLIFT_FACTOR;
-      let precipAmount = airMoisture[r] * precipRate;
-      precipAmount = Math.min(precipAmount, airMoisture[r] * 0.7);
+      let precipAmount = airMoist[r] * precipRate;
+      precipAmount = Math.min(precipAmount, airMoist[r] * 0.7);
 
       precipitation[r] = precipAmount;
-      airMoisture[r] = Math.max(0.01, airMoisture[r] - precipAmount);
+      airMoist[r] = Math.max(0.01, airMoist[r] - precipAmount);
     }
 
-    // Add noise jitter
-    for (let r = 0; r < N; r++) {
-      precipitation[r] *= 0.85 + 0.3 * rng();
-    }
-
-    // Normalize to [0..1]
+    // Normalize precipitation to [0..1] (for river generation)
     let maxP = 0;
     for (let r = 0; r < N; r++) if (precipitation[r] > maxP) maxP = precipitation[r];
     if (maxP > 0) {
       for (let r = 0; r < N; r++) precipitation[r] /= maxP;
     }
 
-    // Mild contrast curve: amplify differences without crushing wet regions
+    // Normalize airMoisture snapshot to [0..1] for land cells only
+    // (already naturally in [0..BASE_MOISTURE] range)
     for (let r = 0; r < N; r++) {
-      precipitation[r] = Math.pow(precipitation[r], 1.8);
+      airMoistureSnapshot[r] /= BASE_MOISTURE;
     }
 
-    return precipitation;
+    return { precipitation, airMoisture: airMoistureSnapshot };
   }
 
   // -----------------------------------------------------------------------
@@ -449,6 +450,7 @@ export class HydrologyGenerator {
   // -----------------------------------------------------------------------
   private _computeMoisture(
     precip: Float32Array,
+    airMoisture: Float32Array,
     accum: Float32Array,
     rivers: number[][],
     adj: number[][],
@@ -507,20 +509,20 @@ export class HydrologyGenerator {
       for (let r = 0; r < N; r++) drainage[r] /= maxLog;
     }
 
-    // Combine
+    // Combine: airMoisture is the primary rain shadow signal (high windward, low leeward)
+    // River proximity and drainage add local wetness near waterways
     const moisture = new Float32Array(N);
     for (let r = 0; r < N; r++) {
       if (isWater(terrain[r])) {
         moisture[r] = 1.0;
         continue;
       }
-      const raw = precip[r] * PRECIP_WEIGHT +
-        riverProx[r] * RIVER_WEIGHT +
-        drainage[r] * DRAINAGE_WEIGHT;
-      // Gentle S-curve: boost contrast while keeping enough moisture for forests
-      const clamped = Math.min(1, Math.max(0, raw));
-      const t = clamped * 2 - 1; // remap to [-1, 1]
-      moisture[r] = Math.min(1, Math.max(0, (t * Math.abs(t) + 1) / 2));
+      // Air moisture: the dominant large-scale signal (rain shadow)
+      // River/drainage: local corrections near waterways
+      const raw = airMoisture[r] * 0.70 +
+        riverProx[r] * 0.20 +
+        drainage[r] * 0.10;
+      moisture[r] = Math.min(1, Math.max(0, raw));
     }
 
     return moisture;

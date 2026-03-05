@@ -106,13 +106,12 @@ export class MountainRenderer {
   }
 
   // -----------------------------------------------------------------------
-  // Voxel-space column extrusion — the core mountain rendering
+  // Voxel-space column extrusion (Comanche-style)
   //
-  // For each column (x), we scan from the back (north, y=0) to front
-  // (south, y=N-1). For each terrain pixel, we compute how high it should
-  // extrude upward. We draw vertical fill from the terrain surface up to
-  // the extruded top. A "horizon" tracker ensures back pixels are occluded
-  // by front pixels (painter's algorithm per-column).
+  // For each column (x), scan FRONT to BACK (south y=N-1 → north y=0).
+  // Front terrain sets the horizon; back terrain only draws what peeks
+  // above. Each high-elevation pixel extrudes upward, creating the visible
+  // cliff face in 3/4 perspective.
   // -----------------------------------------------------------------------
   private _renderMountainMass(
     pixels: Uint32Array,
@@ -143,64 +142,65 @@ export class MountainRenderer {
 
     // Process each column independently
     for (let x = 0; x < N; x++) {
-      // Horizon line: the highest (lowest screen-y) pixel drawn so far
-      // Start at bottom of screen
+      // Horizon: the highest screen-y drawn so far (lowest value = highest on screen)
+      // Starts at N (nothing drawn yet)
       let horizon = N;
 
-      // Scan from back (north) to front (south)
-      for (let y = 0; y < N; y++) {
+      // Scan FRONT to BACK: south (y=N-1) → north (y=0)
+      for (let y = N - 1; y >= 0; y--) {
         const elev = smoothElev[y * N + x];
         if (elev < MOUNTAIN_START) continue;
 
-        // Extrusion height: nonlinear for dramatic peaks
+        // Extrusion height: nonlinear (squared) for dramatic peaks
         const t = (elev - MOUNTAIN_START) / (1 - MOUNTAIN_START);
         const extrusion = Math.floor(t * t * MAX_EXTRUSION);
         if (extrusion < 2) continue;
 
-        // Screen position of the top of the extruded column
+        // Screen position of the top of this extruded column
         const screenTop = y - extrusion;
 
-        // Only draw if this column extends above the current horizon
+        // Only draw above the current horizon (what peeks above front terrain)
         if (screenTop >= horizon) continue;
 
-        // The visible portion is from screenTop to horizon-1
+        // Visible portion: from screenTop up to current horizon
         const drawFrom = Math.max(0, screenTop);
         const drawTo = Math.min(N - 1, horizon - 1);
 
-        // Slope for lighting (from elevation neighbors)
+        // Slope for directional lighting (from elevation neighbors)
+        // Elevation differences are small (~0.01), so scale aggressively
         const eL = x > 0 ? smoothElev[y * N + x - 1] : elev;
         const eR = x < N - 1 ? smoothElev[y * N + x + 1] : elev;
         const eU = y > 0 ? smoothElev[(y - 1) * N + x] : elev;
         const eD = y < N - 1 ? smoothElev[(y + 1) * N + x] : elev;
-        const slopeX = (eR - eL) * 0.5;
-        const slopeY = (eD - eU) * 0.5;
 
-        // Directional lighting (upper-left, -0.707, -0.707)
+        // Slope scaled up heavily since elevation deltas are tiny
+        const slopeX = (eR - eL) * 80;
+        const slopeY = (eD - eU) * 80;
+
+        // Dot with light direction (upper-left: -0.707, -0.707)
         const lightDot = slopeX * -0.707 + slopeY * -0.707;
-        const baseLight = 0.55 + lightDot * 6.0;
+        const baseLight = 0.7 + lightDot * 0.5;
 
         for (let sy = drawFrom; sy <= drawTo; sy++) {
-          // Position within the extruded column (0=top, 1=base)
+          // Position within the extruded column (0=top/surface, 1=base)
           const colT = extrusion > 0 ? (sy - screenTop) / extrusion : 0;
 
-          // Pixels near the top of the column are the mountain surface;
-          // pixels further down are the cliff face visible in 3/4 view
           const isSurface = colT < 0.15;
-          const isCliffFace = colT >= 0.15;
 
-          // Light varies: surface gets terrain-based light,
-          // cliff face gets darkened based on depth
+          // Light: surface uses terrain slope, cliff face uses gradient
           let light: number;
           if (isSurface) {
-            light = Math.max(0.25, Math.min(1.15, baseLight));
+            light = Math.max(0.35, Math.min(1.15, baseLight));
           } else {
-            // Cliff face: darker toward bottom, with some lateral variation
-            const cliffLight = baseLight * (1.0 - colT * 0.5);
-            light = Math.max(0.2, Math.min(1.0, cliffLight));
+            // Cliff face: bright at top transitioning to darker at bottom
+            // but never too dark — these are visible rock faces, not caves
+            const cliffGradient = 0.85 - colT * 0.35;
+            const lateralLight = lightDot * 0.3;
+            light = Math.max(0.4, Math.min(1.1, cliffGradient + lateralLight));
           }
 
-          // Quantize for pixel-art feel
-          light = Math.floor(light * 5) / 5;
+          // Quantize for pixel-art feel (6 levels)
+          light = Math.floor(light * 6) / 6;
 
           // ---- Material selection ----
           const isAboveSnowLine = elev >= SNOW_LINE;
@@ -214,52 +214,54 @@ export class MountainRenderer {
             if (light > 0.9) rgb = SNOW_HIGHLIGHT;
             else if (light > 0.7) rgb = SNOW_BRIGHT;
             else if (light > 0.5) rgb = SNOW_MID;
-            else if (light > 0.3) rgb = SNOW_SHADOW;
+            else if (light > 0.35) rgb = SNOW_SHADOW;
             else rgb = SNOW_DEEP_SHADOW;
-          } else if (isAboveSnowLine && isCliffFace) {
-            // High-altitude cliff face: mix of snow patches and rock
+          } else if (isAboveSnowLine) {
+            // High-altitude cliff face: snow patches + exposed rock
             const snowPatch = n1 > -0.1 + colT * 0.8;
             if (snowPatch) {
               if (light > 0.7) rgb = SNOW_BRIGHT;
-              else if (light > 0.4) rgb = SNOW_MID;
+              else if (light > 0.5) rgb = SNOW_MID;
               else rgb = SNOW_SHADOW;
             } else {
-              // Exposed rock on cliff face
+              // Exposed warm rock on cliff face
               if (n2 > 0.2) {
-                rgb = light > 0.5 ? ROCK_WARM_HOT : ROCK_WARM_LIGHT;
+                rgb = light > 0.6 ? ROCK_WARM_HOT : ROCK_WARM_LIGHT;
               } else if (n2 > -0.2) {
-                rgb = light > 0.5 ? ROCK_WARM_LIGHT : ROCK_WARM_MID;
+                rgb = light > 0.55 ? ROCK_WARM_LIGHT : ROCK_WARM_MID;
               } else {
-                rgb = light > 0.4 ? ROCK_WARM_MID : ROCK_WARM_DARK;
+                rgb = light > 0.5 ? ROCK_WARM_MID : ROCK_WARM_DARK;
               }
             }
           } else if (isSurface) {
-            // Lower mountain surface (below snow line): rock
+            // Lower mountain surface (below snow line): warm rock
             if (n2 > 0.2) {
               rgb = light > 0.6 ? ROCK_WARM_HOT : ROCK_WARM_LIGHT;
             } else if (n2 > -0.2) {
-              rgb = light > 0.5 ? ROCK_WARM_LIGHT : ROCK_WARM_MID;
+              rgb = light > 0.55 ? ROCK_WARM_LIGHT : ROCK_WARM_MID;
             } else {
-              rgb = light > 0.4 ? ROCK_WARM_MID : ROCK_WARM_DARK;
+              rgb = light > 0.5 ? ROCK_WARM_MID : ROCK_WARM_DARK;
             }
           } else {
-            // Lower cliff face: cool shadow tones
-            if (n2 > 0.3) {
-              rgb = light > 0.5 ? ROCK_COOL_LIGHT : ROCK_COOL_MID;
+            // Lower cliff face: cool shadow tones with some warm patches
+            if (n2 > 0.4) {
+              rgb = light > 0.6 ? ROCK_WARM_LIGHT : ROCK_COOL_LIGHT;
+            } else if (n2 > 0.0) {
+              rgb = light > 0.55 ? ROCK_COOL_LIGHT : ROCK_COOL_MID;
             } else {
-              rgb = light > 0.4 ? ROCK_COOL_MID : ROCK_COOL_DARK;
+              rgb = light > 0.5 ? ROCK_COOL_MID : ROCK_COOL_DARK;
             }
           }
 
-          // Slight edge highlight at the very top of visible column
-          if (sy === drawFrom && isSurface) {
-            light = Math.min(1.2, light + 0.15);
+          // Bright edge highlight at the very top of visible column
+          if (sy === drawFrom) {
+            light = Math.min(1.2, light + 0.2);
           }
 
           pixels[sy * N + x] = applyBrightness(rgb, light);
         }
 
-        // Update horizon
+        // Update horizon — this column is now occluded below drawFrom
         horizon = Math.min(horizon, drawFrom);
       }
     }

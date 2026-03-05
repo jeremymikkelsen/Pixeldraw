@@ -1,49 +1,61 @@
 import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
-import { applyBrightness } from './TerrainPalettes';
+import { applyBrightness, packABGR } from './TerrainPalettes';
 
 // ---------------------------------------------------------------------------
-// Mountain rendering — voxel-space column extrusion for massive 3D forms
+// Terrain Extrusion Renderer (Comanche-style voxel column extrusion)
 //
-// Instead of placing discrete peak objects, we extrude every high-elevation
-// pixel upward proportional to its elevation. This creates continuous mountain
-// masses that naturally fill the entire high-elevation region. Processing
-// columns back-to-front (north to south) gives correct occlusion.
+// Applies faux-3D height extrusion to the ENTIRE map. Runs as a post-
+// processing pass after all other renderers (ground, coast, rivers, trees).
+//
+// For each screen column (x), scans front-to-back (south→north). Each
+// terrain pixel is shifted upward proportional to its elevation. Surface
+// pixels preserve their original rendered colors; cliff faces get filled
+// with terrain-appropriate colors.
 // ---------------------------------------------------------------------------
 
-// Elevation thresholds
-const MOUNTAIN_START = 0.42;  // foothills begin
-const SNOW_LINE = 0.61;       // snow coverage begins
-const CRAG_MIN_ELEV = 0.45;
+// Elevation where land begins (coast threshold from TopographyGenerator)
+const LAND_START = 0.12;
+
+// Snow line for cliff face material
+const SNOW_LINE = 0.61;
 
 // Maximum upward extrusion in pixels for the highest elevation
 const MAX_EXTRUSION = 100;
 
-// ---- Rock palette: warm brown/orange tones ----
-const ROCK_WARM_DARK   = 0x5a3c28;
-const ROCK_WARM_MID    = 0x7a5438;
-const ROCK_WARM_LIGHT  = 0x9a7048;
-const ROCK_WARM_HOT    = 0xb08050;
+// Minimum extrusion to bother rendering (skip very low terrain)
+const MIN_EXTRUSION = 1;
 
-const ROCK_COOL_DARK   = 0x3a3840;
-const ROCK_COOL_MID    = 0x585060;
-const ROCK_COOL_LIGHT  = 0x787078;
+// ---- Cliff face palettes by elevation zone ----
 
-// ---- Snow palette ----
-const SNOW_DEEP_SHADOW = 0x8098b8;
-const SNOW_SHADOW      = 0xa0b8d0;
-const SNOW_MID         = 0xc8d8e8;
-const SNOW_BRIGHT      = 0xe0ecf4;
-const SNOW_HIGHLIGHT   = 0xf0f8ff;
+// Low elevation cliff (coast/lowland): earthy green-brown
+const CLIFF_LOW_DARK   = 0x4a5838;  // dark mossy
+const CLIFF_LOW_MID    = 0x5a6840;  // earth green
+const CLIFF_LOW_LIGHT  = 0x6a7848;  // light earthy
 
-// ---- Crag palette ----
-const CRAG_DARK      = 0x585040;
-const CRAG_MID       = 0x706850;
-const CRAG_LIGHT     = 0x888068;
-const CRAG_HIGHLIGHT = 0xa09880;
+// Mid elevation cliff (highland): warm brown earth
+const CLIFF_MID_DARK   = 0x5a4830;  // dark brown
+const CLIFF_MID_MID    = 0x7a6040;  // brown
+const CLIFF_MID_LIGHT  = 0x8a7050;  // tan
+
+// High elevation cliff (rock zone): warm rock
+const CLIFF_HIGH_DARK  = 0x5a3c28;  // deep brown rock
+const CLIFF_HIGH_MID   = 0x7a5438;  // brown rock
+const CLIFF_HIGH_LIGHT = 0x9a7048;  // warm tan rock
+const CLIFF_HIGH_HOT   = 0xb08050;  // orange-brown highlight
+
+// Snow zone cliff: cool rock + snow patches
+const CLIFF_SNOW_ROCK_DARK  = 0x585060;  // cool gray
+const CLIFF_SNOW_ROCK_MID   = 0x787078;  // mid gray
+const CLIFF_SNOW_ROCK_LIGHT = 0x989090;  // light gray
+
+const SNOW_SHADOW    = 0xa0b8d0;
+const SNOW_MID       = 0xc8d8e8;
+const SNOW_BRIGHT    = 0xe0ecf4;
+const SNOW_HIGHLIGHT = 0xf0f8ff;
 
 // ---------------------------------------------------------------------------
-// MountainRenderer
+// MountainRenderer (full-map terrain extrusion)
 // ---------------------------------------------------------------------------
 export class MountainRenderer {
 
@@ -53,7 +65,6 @@ export class MountainRenderer {
     resolution: number,
     seed: number,
   ): void {
-    const rng = mulberry32(seed ^ 0x70c4);
     const rngNoise = mulberry32(seed ^ 0x904e);
     const noise = createNoise2D(rngNoise);
     const rngNoise2 = mulberry32(seed ^ 0x1234);
@@ -98,29 +109,21 @@ export class MountainRenderer {
       }
     }
 
-    // 1. Rocky crags at high elevation (below snow line)
-    this._renderCrags(pixels, elevGrid, N, rng, noise);
-
-    // 2. Voxel-space column extrusion for mountain masses
-    this._renderMountainMass(pixels, elevGrid, N, noise, noise2);
+    // Apply full-map terrain extrusion
+    this._extrudeTerrain(pixels, elevGrid, N, noise, noise2);
   }
 
   // -----------------------------------------------------------------------
-  // Voxel-space column extrusion (Comanche-style)
-  //
-  // For each column (x), scan FRONT to BACK (south y=N-1 → north y=0).
-  // Front terrain sets the horizon; back terrain only draws what peeks
-  // above. Each high-elevation pixel extrudes upward, creating the visible
-  // cliff face in 3/4 perspective.
+  // Full-map voxel column extrusion
   // -----------------------------------------------------------------------
-  private _renderMountainMass(
+  private _extrudeTerrain(
     pixels: Uint32Array,
     elevGrid: Float32Array,
     N: number,
     noise: NoiseFunction2D,
     noise2: NoiseFunction2D,
   ): void {
-    // Pre-compute smoothed elevation for gentler slopes
+    // Smooth elevation for gentle slopes (avoids jagged extrusion edges)
     const smoothElev = new Float32Array(N * N);
     const BLUR = 3;
     for (let y = 0; y < N; y++) {
@@ -140,195 +143,129 @@ export class MountainRenderer {
       }
     }
 
+    // Snapshot the current pixel buffer (preserves ground, trees, rivers)
+    const srcPixels = new Uint32Array(pixels);
+
     // Process each column independently
     for (let x = 0; x < N; x++) {
-      // Horizon: the highest screen-y drawn so far (lowest value = highest on screen)
-      // Starts at N (nothing drawn yet)
-      let horizon = N;
+      let horizon = N; // nothing drawn yet
 
       // Scan FRONT to BACK: south (y=N-1) → north (y=0)
       for (let y = N - 1; y >= 0; y--) {
         const elev = smoothElev[y * N + x];
-        if (elev < MOUNTAIN_START) continue;
+        if (elev < LAND_START) continue;
 
-        // Extrusion height: nonlinear (squared) for dramatic peaks
-        const t = (elev - MOUNTAIN_START) / (1 - MOUNTAIN_START);
+        // Extrusion height: t² curve (low land barely rises, peaks dramatic)
+        const t = (elev - LAND_START) / (1 - LAND_START);
         const extrusion = Math.floor(t * t * MAX_EXTRUSION);
-        if (extrusion < 2) continue;
+        if (extrusion < MIN_EXTRUSION) continue;
 
-        // Screen position of the top of this extruded column
+        // Screen position of the extruded top
         const screenTop = y - extrusion;
 
-        // Only draw above the current horizon (what peeks above front terrain)
+        // Only draw what peeks above current horizon
         if (screenTop >= horizon) continue;
 
-        // Visible portion: from screenTop up to current horizon
         const drawFrom = Math.max(0, screenTop);
         const drawTo = Math.min(N - 1, horizon - 1);
 
-        // Slope for directional lighting (from elevation neighbors)
-        // Elevation differences are small (~0.01), so scale aggressively
+        // Slope for directional lighting
         const eL = x > 0 ? smoothElev[y * N + x - 1] : elev;
         const eR = x < N - 1 ? smoothElev[y * N + x + 1] : elev;
         const eU = y > 0 ? smoothElev[(y - 1) * N + x] : elev;
         const eD = y < N - 1 ? smoothElev[(y + 1) * N + x] : elev;
 
-        // Slope scaled up heavily since elevation deltas are tiny
+        // Scale slopes heavily (elevation deltas ~0.01 between neighbors)
         const slopeX = (eR - eL) * 80;
         const slopeY = (eD - eU) * 80;
-
-        // Dot with light direction (upper-left: -0.707, -0.707)
         const lightDot = slopeX * -0.707 + slopeY * -0.707;
-        const baseLight = 0.7 + lightDot * 0.5;
 
         for (let sy = drawFrom; sy <= drawTo; sy++) {
-          // Position within the extruded column (0=top/surface, 1=base)
           const colT = extrusion > 0 ? (sy - screenTop) / extrusion : 0;
 
-          const isSurface = colT < 0.15;
-
-          // Light: surface uses terrain slope, cliff face uses gradient
-          let light: number;
-          if (isSurface) {
-            light = Math.max(0.35, Math.min(1.15, baseLight));
+          // Surface pixels (top ~15%): preserve original rendered colors
+          // with slope-based brightness adjustment
+          if (colT < 0.15) {
+            const surfaceLight = 0.7 + lightDot * 0.5;
+            const light = Math.max(0.5, Math.min(1.2, surfaceLight));
+            // Apply lighting to the original pixel color
+            const origPixel = srcPixels[y * N + x];
+            const r = (origPixel) & 0xff;
+            const g = (origPixel >> 8) & 0xff;
+            const b = (origPixel >> 16) & 0xff;
+            const lr = Math.min(255, Math.floor(r * light));
+            const lg = Math.min(255, Math.floor(g * light));
+            const lb = Math.min(255, Math.floor(b * light));
+            pixels[sy * N + x] = packABGR(lr, lg, lb);
           } else {
-            // Cliff face: bright at top transitioning to darker at bottom
-            // but never too dark — these are visible rock faces, not caves
-            const cliffGradient = 0.85 - colT * 0.35;
-            const lateralLight = lightDot * 0.3;
-            light = Math.max(0.4, Math.min(1.1, cliffGradient + lateralLight));
+            // Cliff face: terrain-appropriate colors
+            // Light: bright at top, gradually darker toward base, never black
+            const cliffBase = 0.75 - colT * 0.2; // 0.75 at top → 0.55 at base
+            const lateralLight = lightDot * 0.25;
+            let light = cliffBase + lateralLight;
+            light = Math.max(0.5, Math.min(1.1, light));
+            // Quantize for pixel-art feel
+            light = Math.floor(light * 6) / 6;
+
+            const rgb = this._cliffColor(elev, colT, light, x, sy, noise, noise2);
+            pixels[sy * N + x] = applyBrightness(rgb, light);
           }
-
-          // Quantize for pixel-art feel (6 levels)
-          light = Math.floor(light * 6) / 6;
-
-          // ---- Material selection ----
-          const isAboveSnowLine = elev >= SNOW_LINE;
-          const n1 = noise(x * 0.1, sy * 0.1);
-          const n2 = noise2(x * 0.2 + sy * 0.15, sy * 0.2 - x * 0.1);
-
-          let rgb: number;
-
-          if (isAboveSnowLine && isSurface) {
-            // Snow on surface of high peaks
-            if (light > 0.9) rgb = SNOW_HIGHLIGHT;
-            else if (light > 0.7) rgb = SNOW_BRIGHT;
-            else if (light > 0.5) rgb = SNOW_MID;
-            else if (light > 0.35) rgb = SNOW_SHADOW;
-            else rgb = SNOW_DEEP_SHADOW;
-          } else if (isAboveSnowLine) {
-            // High-altitude cliff face: snow patches + exposed rock
-            const snowPatch = n1 > -0.1 + colT * 0.8;
-            if (snowPatch) {
-              if (light > 0.7) rgb = SNOW_BRIGHT;
-              else if (light > 0.5) rgb = SNOW_MID;
-              else rgb = SNOW_SHADOW;
-            } else {
-              // Exposed warm rock on cliff face
-              if (n2 > 0.2) {
-                rgb = light > 0.6 ? ROCK_WARM_HOT : ROCK_WARM_LIGHT;
-              } else if (n2 > -0.2) {
-                rgb = light > 0.55 ? ROCK_WARM_LIGHT : ROCK_WARM_MID;
-              } else {
-                rgb = light > 0.5 ? ROCK_WARM_MID : ROCK_WARM_DARK;
-              }
-            }
-          } else if (isSurface) {
-            // Lower mountain surface (below snow line): warm rock
-            if (n2 > 0.2) {
-              rgb = light > 0.6 ? ROCK_WARM_HOT : ROCK_WARM_LIGHT;
-            } else if (n2 > -0.2) {
-              rgb = light > 0.55 ? ROCK_WARM_LIGHT : ROCK_WARM_MID;
-            } else {
-              rgb = light > 0.5 ? ROCK_WARM_MID : ROCK_WARM_DARK;
-            }
-          } else {
-            // Lower cliff face: cool shadow tones with some warm patches
-            if (n2 > 0.4) {
-              rgb = light > 0.6 ? ROCK_WARM_LIGHT : ROCK_COOL_LIGHT;
-            } else if (n2 > 0.0) {
-              rgb = light > 0.55 ? ROCK_COOL_LIGHT : ROCK_COOL_MID;
-            } else {
-              rgb = light > 0.5 ? ROCK_COOL_MID : ROCK_COOL_DARK;
-            }
-          }
-
-          // Bright edge highlight at the very top of visible column
-          if (sy === drawFrom) {
-            light = Math.min(1.2, light + 0.2);
-          }
-
-          pixels[sy * N + x] = applyBrightness(rgb, light);
         }
 
-        // Update horizon — this column is now occluded below drawFrom
         horizon = Math.min(horizon, drawFrom);
       }
     }
   }
 
   // -----------------------------------------------------------------------
-  // Rocky crags at high elevation (below snow line)
+  // Cliff face color by elevation zone
   // -----------------------------------------------------------------------
-  private _renderCrags(
-    pixels: Uint32Array,
-    elevGrid: Float32Array,
-    N: number,
-    rng: () => number,
+  private _cliffColor(
+    elev: number,
+    colT: number,
+    light: number,
+    x: number,
+    y: number,
     noise: NoiseFunction2D,
-  ): void {
-    const step = 8;
-    const CRAG_DENSITY = 0.003;
+    noise2: NoiseFunction2D,
+  ): number {
+    const n1 = noise(x * 0.12, y * 0.12);
+    const n2 = noise2(x * 0.18 + y * 0.12, y * 0.18 - x * 0.08);
 
-    for (let py = step; py < N - step; py += step) {
-      for (let px = step; px < N - step; px += step) {
-        const elev = elevGrid[py * N + px];
-        if (elev < CRAG_MIN_ELEV || elev >= SNOW_LINE) continue;
-
-        const chance = CRAG_DENSITY * ((elev - CRAG_MIN_ELEV) / (SNOW_LINE - CRAG_MIN_ELEV));
-        if (rng() > chance) continue;
-
-        const cragW = 3 + Math.floor(rng() * 6);
-        const cragH = 4 + Math.floor(rng() * 6);
-        this._renderCrag(pixels, px, py, cragW, cragH, N, rng, noise);
+    if (elev >= SNOW_LINE) {
+      // Snow zone: snow patches on upper cliff, exposed rock on lower
+      const snowPatch = n1 > -0.2 + colT * 0.9;
+      if (snowPatch) {
+        if (light > 0.85) return SNOW_HIGHLIGHT;
+        if (light > 0.7) return SNOW_BRIGHT;
+        if (light > 0.55) return SNOW_MID;
+        return SNOW_SHADOW;
       }
+      // Exposed rock between snow patches
+      if (n2 > 0.2) return CLIFF_HIGH_HOT;
+      if (n2 > -0.1) return CLIFF_HIGH_LIGHT;
+      if (n2 > -0.3) return CLIFF_SNOW_ROCK_MID;
+      return CLIFF_SNOW_ROCK_DARK;
     }
-  }
 
-  private _renderCrag(
-    pixels: Uint32Array,
-    cx: number,
-    cy: number,
-    width: number,
-    height: number,
-    N: number,
-    rng: () => number,
-    noise: NoiseFunction2D,
-  ): void {
-    for (let dy = -height; dy <= 0; dy++) {
-      const t = 1 - (-dy / height);
-      const rowHW = Math.max(1, Math.floor(width * t / 2));
-      const edgeNoise = noise(cx * 0.15 + dy * 0.3, cy * 0.15) * 1.5;
-      const adjustedHW = Math.max(1, rowHW + Math.floor(edgeNoise));
-
-      for (let dx = -adjustedHW; dx <= adjustedHW; dx++) {
-        const px = cx + dx;
-        const py = cy + dy;
-        if (px < 0 || px >= N || py < 0 || py >= N) continue;
-
-        const relX = adjustedHW > 0 ? dx / adjustedHW : 0;
-        const light = 0.55 + relX * -0.707 * 0.5 + (t - 0.5) * -0.707 * 0.4;
-        const lightClamped = Math.max(0.3, Math.min(1.0, light));
-
-        const n = noise(px * 0.2, py * 0.2);
-        let rgb: number;
-        if (n > 0.3) rgb = CRAG_HIGHLIGHT;
-        else if (n > 0) rgb = CRAG_LIGHT;
-        else if (n > -0.3) rgb = CRAG_MID;
-        else rgb = CRAG_DARK;
-
-        pixels[py * N + px] = applyBrightness(rgb, lightClamped);
-      }
+    if (elev >= 0.45) {
+      // Rock/high zone: warm brown rock faces
+      if (n2 > 0.3) return CLIFF_HIGH_HOT;
+      if (n2 > 0.0) return CLIFF_HIGH_LIGHT;
+      if (n2 > -0.3) return CLIFF_HIGH_MID;
+      return CLIFF_HIGH_DARK;
     }
+
+    if (elev >= 0.25) {
+      // Highland: brown earth
+      if (n2 > 0.3) return CLIFF_MID_LIGHT;
+      if (n2 > -0.2) return CLIFF_MID_MID;
+      return CLIFF_MID_DARK;
+    }
+
+    // Lowland/coast: earthy green-brown
+    if (n2 > 0.3) return CLIFF_LOW_LIGHT;
+    if (n2 > -0.2) return CLIFF_LOW_MID;
+    return CLIFF_LOW_DARK;
   }
 }

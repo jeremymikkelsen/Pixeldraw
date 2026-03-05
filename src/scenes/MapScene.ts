@@ -273,13 +273,13 @@ export class MapScene extends Phaser.Scene {
     const total = N * N;
     const overlay = new Uint32Array(total);
 
-    // Dry (brown) → wet (blue) gradient
-    // t=0 (dry): warm brown  t=1 (wet): deep blue
+    // Dry (warm tan) → wet (deep blue) gradient with wider color range
+    // t=0 (dry): (0xB0, 0x85, 0x30)  t=1 (wet): (0x10, 0x30, 0xB0)
     for (let i = 0; i < total; i++) {
       const m = Math.min(1, Math.max(0, hydro.moisture[regionGrid[i]]));
-      const r = Math.floor(0x8a * (1 - m) + 0x20 * m);
-      const g = Math.floor(0x70 * (1 - m) + 0x40 * m);
-      const b = Math.floor(0x3a * (1 - m) + 0x90 * m);
+      const r = Math.floor(0xb0 * (1 - m) + 0x10 * m);
+      const g = Math.floor(0x85 * (1 - m) + 0x30 * m);
+      const b = Math.floor(0x30 * (1 - m) + 0xb0 * m);
       overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r; // ABGR
     }
 

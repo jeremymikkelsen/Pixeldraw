@@ -16,9 +16,9 @@ import { DualMesh, Point } from './DualMesh';
 
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
-const OCEAN_RECHARGE = 0.04;
-const UPLIFT_FACTOR = 5.0;
-const BASE_PRECIP_RATE = 0.06;
+const OCEAN_RECHARGE = 0.08;
+const UPLIFT_FACTOR = 8.0;
+const BASE_PRECIP_RATE = 0.04;
 
 // -- River extraction --
 const RIVER_THRESHOLD = 25;
@@ -269,9 +269,9 @@ export class HydrologyGenerator {
       for (let r = 0; r < N; r++) precipitation[r] /= maxP;
     }
 
-    // Contrast curve: push values away from the midpoint for more visible variation
+    // Contrast curve: steepen the falloff so dry regions are visibly drier
     for (let r = 0; r < N; r++) {
-      precipitation[r] = Math.pow(precipitation[r], 0.5);
+      precipitation[r] = Math.pow(precipitation[r], 2.0);
     }
 
     return precipitation;
@@ -512,11 +512,14 @@ export class HydrologyGenerator {
         moisture[r] = 1.0;
         continue;
       }
-      moisture[r] = Math.min(1, Math.max(0,
-        precip[r] * PRECIP_WEIGHT +
+      const raw = precip[r] * PRECIP_WEIGHT +
         riverProx[r] * RIVER_WEIGHT +
-        drainage[r] * DRAINAGE_WEIGHT,
-      ));
+        drainage[r] * DRAINAGE_WEIGHT;
+      // Apply S-curve contrast to push values toward extremes
+      const clamped = Math.min(1, Math.max(0, raw));
+      moisture[r] = clamped < 0.5
+        ? 2 * clamped * clamped
+        : 1 - 2 * (1 - clamped) * (1 - clamped);
     }
 
     return moisture;

@@ -37,6 +37,15 @@ export class MapScene extends Phaser.Scene {
   private _elevationOverlay!: Uint32Array | null;
   private _activeOverlay: 'none' | 'moisture' | 'elevation' = 'none';
 
+  // Touch/mobile state
+  private _isTouchDevice = false;
+  private _lastPinchDist = 0;
+  private _isDragging = false;
+  private _dragStartX = 0;
+  private _dragStartY = 0;
+  private _camStartX = 0;
+  private _camStartY = 0;
+
   constructor() {
     super({ key: 'MapScene' });
   }
@@ -66,8 +75,15 @@ export class MapScene extends Phaser.Scene {
       this._activeOverlay = this._activeOverlay === 'elevation' ? 'none' : 'elevation';
     });
 
+    // Touch / mobile support
+    this._isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    this._setupTouchControls();
+
     // HUD text (fixed to camera via setScrollFactor)
-    this.add.text(8, 8, 'ARROWS scroll · +/- zoom · SPACE regenerate · 9 elevation · 0 moisture', {
+    const hudLabel = this._isTouchDevice
+      ? 'Drag to pan · Pinch to zoom · Buttons at bottom-right'
+      : 'ARROWS scroll · +/- zoom · SPACE regenerate · 9 elevation · 0 moisture';
+    this.add.text(8, 8, hudLabel, {
       fontSize: '13px',
       color: '#ffffff',
       backgroundColor: '#00000088',
@@ -119,6 +135,79 @@ export class MapScene extends Phaser.Scene {
       this._ctx.putImageData(this._imageData, 0, 0);
       this._canvasTex.refresh();
     }
+  }
+
+  private _setupTouchControls(): void {
+    const canvas = this.game.canvas;
+
+    // Prevent default touch behavior (scroll, zoom, etc.)
+    canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+    // Single-finger drag to pan
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (!this._isTouchDevice) return;
+      this._isDragging = true;
+      this._dragStartX = pointer.x;
+      this._dragStartY = pointer.y;
+      const cam = this.cameras.main;
+      this._camStartX = cam.scrollX;
+      this._camStartY = cam.scrollY;
+    });
+
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!this._isTouchDevice || !this._isDragging) return;
+      const cam = this.cameras.main;
+      const dx = (this._dragStartX - pointer.x) / cam.zoom;
+      const dy = (this._dragStartY - pointer.y) / cam.zoom;
+      cam.scrollX = this._camStartX + dx;
+      cam.scrollY = this._camStartY + dy;
+    });
+
+    this.input.on('pointerup', () => {
+      this._isDragging = false;
+    });
+
+    // Pinch to zoom (raw touch events for multi-touch)
+    canvas.addEventListener('touchstart', (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        this._isDragging = false; // cancel pan during pinch
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        this._lastPinchDist = Math.hypot(dx, dy);
+      }
+    });
+
+    canvas.addEventListener('touchmove', (e: TouchEvent) => {
+      if (e.touches.length === 2 && this._lastPinchDist > 0) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.hypot(dx, dy);
+        const scale = dist / this._lastPinchDist;
+        const cam = this.cameras.main;
+        cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * scale));
+        this._lastPinchDist = dist;
+      }
+    });
+
+    canvas.addEventListener('touchend', () => {
+      this._lastPinchDist = 0;
+    });
+
+    // Wire up mobile HTML buttons
+    const btnRegenerate = document.getElementById('btn-regenerate');
+    const btnElevation = document.getElementById('btn-elevation');
+    const btnMoisture = document.getElementById('btn-moisture');
+
+    btnRegenerate?.addEventListener('click', () => {
+      this._generateMap(Date.now());
+    });
+    btnElevation?.addEventListener('click', () => {
+      this._activeOverlay = this._activeOverlay === 'elevation' ? 'none' : 'elevation';
+    });
+    btnMoisture?.addEventListener('click', () => {
+      this._activeOverlay = this._activeOverlay === 'moisture' ? 'none' : 'moisture';
+    });
   }
 
   private _updateHoveredRegion(): void {

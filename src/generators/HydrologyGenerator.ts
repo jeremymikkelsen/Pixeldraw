@@ -17,17 +17,17 @@ import { DualMesh, Point } from './DualMesh';
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
 const OCEAN_RECHARGE = 0.06;
-const UPLIFT_FACTOR = 10.0;
-const BASE_PRECIP_RATE = 0.03;
+const UPLIFT_FACTOR = 12.0;
+const BASE_PRECIP_RATE = 0.005;
 const ELEV_CURVE_EXP = 2.2; // must match TopographyGenerator pow() exponent
 
 // -- River extraction --
 const RIVER_THRESHOLD = 25;
 
 // -- Soil moisture --
-const PRECIP_WEIGHT = 0.65;
-const RIVER_WEIGHT = 0.25;
-const DRAINAGE_WEIGHT = 0.10;
+const PRECIP_WEIGHT = 0.80;
+const RIVER_WEIGHT = 0.15;
+const DRAINAGE_WEIGHT = 0.05;
 const RIVER_SPREAD_DIST = 6;
 
 // ---------------------------------------------------------------------------
@@ -273,7 +273,7 @@ export class HydrologyGenerator {
 
     // Mild contrast curve: amplify differences without crushing wet regions
     for (let r = 0; r < N; r++) {
-      precipitation[r] = Math.pow(precipitation[r], 1.4);
+      precipitation[r] = Math.pow(precipitation[r], 1.8);
     }
 
     return precipitation;

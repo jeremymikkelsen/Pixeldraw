@@ -22,8 +22,8 @@ const OCEAN_FADE_MARGIN = 60;     // match the 60px ocean edge fade
 // Lowland (< 0.25): sparse plains with occasional deciduous
 // Highland (0.25–0.45): dense deciduous forest
 // Rock (0.45–0.61): dense conifer forest up to treeline
-const DECIDUOUS_ONLY_BELOW = 0.40;
-const CONIFER_ONLY_ABOVE = 0.48;
+const DECIDUOUS_ONLY_BELOW = 0.34;
+const CONIFER_ONLY_ABOVE = 0.42;
 const SNOW_LINE = 0.61;           // no trees above this elevation
 
 // ---------------------------------------------------------------------------

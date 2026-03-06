@@ -169,11 +169,13 @@ export class MountainRenderer {
       }
     }
 
-    // Pre-paint snow and rock onto buffer — but SKIP tree pixels
+    // Pre-paint snow and rock onto buffer — but SKIP tree pixels and ocean/water
+    const LAND_THRESHOLD = 0.08; // match water/coast boundary from terrain classification
     for (let i = 0; i < N * N; i++) {
       const elev = smoothElev[i];
-      // Don't paint over trees
+      // Don't paint over trees or ocean/water
       if (treeMask && treeMask[i]) continue;
+      if (elev < LAND_THRESHOLD) continue;
 
       if (elev >= this._snowLine) {
         // Snow: only the highest peaks

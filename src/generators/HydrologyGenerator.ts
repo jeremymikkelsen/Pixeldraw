@@ -13,6 +13,7 @@
 
 import { TopographyGenerator, TerrainType, mulberry32 } from './TopographyGenerator';
 import { DualMesh, Point } from './DualMesh';
+import { buildAdjacencyList } from '../utils/adjacency';
 
 // -- Precipitation constants --
 const BASE_MOISTURE = 1.0;
@@ -103,8 +104,8 @@ export class HydrologyGenerator {
     const N = mesh.numRegions;
     const rng = mulberry32(seed ^ 0xf100d);
 
-    // Step 0: adjacency
-    const adj = this._buildAdjacency(mesh);
+    // Step 0: adjacency (shared utility)
+    const adj = buildAdjacencyList(mesh);
 
     // Step 1: precipitation + air moisture (for rain shadow)
     const { precipitation, airMoisture } = this._computePrecipitation(
@@ -136,54 +137,6 @@ export class HydrologyGenerator {
     (this as any).flowAccumulation = flowAccumulation;
     (this as any).moisture = moisture;
     (this as any).rivers = rivers;
-  }
-
-  // -----------------------------------------------------------------------
-  // Step 0: build adjacency in O(E) instead of O(R*E)
-  // -----------------------------------------------------------------------
-  private _buildAdjacency(mesh: DualMesh): number[][] {
-    const N = mesh.numRegions;
-    const adj: number[][] = new Array(N);
-    for (let i = 0; i < N; i++) adj[i] = [];
-
-    const triangles = mesh.delaunay.triangles;
-    const halfedges = mesh.delaunay.halfedges;
-    const numEdges = triangles.length;
-
-    // Use a flat boolean grid for dedup (faster than Set for small neighbor counts)
-    // We'll use a per-region marker array and clear as we go
-    const seen = new Uint8Array(N);
-    const touchedRegions: number[] = [];
-
-    for (let r = 0; r < N; r++) seen[r] = 0;
-
-    // Group edges by region using a single pass
-    for (let e = 0; e < numEdges; e++) {
-      const r = triangles[e];
-      const opp = halfedges[e];
-      if (opp === -1) continue;
-      const neighbor = triangles[opp];
-      if (r === neighbor) continue;
-      if (!seen[neighbor]) {
-        // We need per-region dedup — but seen is global.
-        // Instead, just collect and dedup per-region after.
-      }
-    }
-
-    // Simpler approach: iterate edges, build with Set-based dedup
-    const sets: Set<number>[] = new Array(N);
-    for (let i = 0; i < N; i++) sets[i] = new Set();
-
-    for (let e = 0; e < numEdges; e++) {
-      const r = triangles[e];
-      const opp = halfedges[e];
-      if (opp === -1) continue;
-      const neighbor = triangles[opp];
-      if (r !== neighbor) sets[r].add(neighbor);
-    }
-
-    for (let i = 0; i < N; i++) adj[i] = Array.from(sets[i]);
-    return adj;
   }
 
   // -----------------------------------------------------------------------

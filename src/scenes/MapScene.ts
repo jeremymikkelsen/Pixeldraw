@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
-import { TopographyGenerator } from '../generators/TopographyGenerator';
 import { GroundRenderer } from '../generators/GroundRenderer';
-import { HydrologyGenerator } from '../generators/HydrologyGenerator';
 import { TreeRenderer } from '../generators/TreeRenderer';
 import { RiverAnimator } from '../generators/RiverAnimator';
 import { CoastalRenderer } from '../generators/CoastalRenderer';
 import { MountainRenderer } from '../generators/MountainRenderer';
 import { RiverDeltaRenderer } from '../generators/RiverDeltaRenderer';
+import { GameState, createGameState } from '../state/GameState';
+import { renderDuchies } from '../renderers/DuchyRenderer';
+import { UIManager } from '../ui/UIManager';
 
 const MAP_SIZE = 3072;
 const PIXEL_RESOLUTION = 1536;
@@ -53,12 +54,22 @@ export class MapScene extends Phaser.Scene {
   private _camStartX = 0;
   private _camStartY = 0;
 
+  // Game state + UI
+  private _state!: GameState;
+  private _ui!: UIManager;
+
   constructor() {
     super({ key: 'MapScene' });
   }
 
   create(): void {
-    this._generateMap(Date.now());
+    this._ui = new UIManager();
+    this._ui.onTurnAdvanced = () => {
+      // For now, just log the turn advance. Future: re-render seasonal changes.
+      console.log(`[Turn] ${this._state.year}, ${this._state.season}`);
+    };
+
+    this._initializeGame(Date.now());
 
     // Camera setup
     const cam = this.cameras.main;
@@ -72,7 +83,7 @@ export class MapScene extends Phaser.Scene {
     this.eqKey = this.input.keyboard!.addKey(187);  // =/+ key on US keyboards
 
     this.input.keyboard!.on('keydown-SPACE', () => {
-      this._generateMap(Date.now());
+      this._initializeGame(Date.now());
     });
 
     this.input.keyboard!.on('keydown-ZERO', () => {
@@ -91,11 +102,21 @@ export class MapScene extends Phaser.Scene {
     this._isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     this._setupTouchControls();
 
+    // Click to show region info
+    this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+      // Only fire region click if the pointer didn't drag significantly
+      const dx = Math.abs(pointer.x - pointer.downX);
+      const dy = Math.abs(pointer.y - pointer.downY);
+      if (dx < 5 && dy < 5) {
+        this._onRegionClick(pointer);
+      }
+    });
+
     // HUD text (fixed to camera via setScrollFactor)
     const hudLabel = this._isTouchDevice
       ? 'Drag to pan · Pinch to zoom · Buttons at bottom-right'
       : 'ARROWS scroll · +/- zoom · SPACE regenerate · 9 elevation · 0 moisture';
-    this.add.text(8, 8, hudLabel, {
+    this.add.text(8, 40, hudLabel, {
       fontSize: '13px',
       color: '#ffffff',
       backgroundColor: '#00000088',
@@ -216,7 +237,7 @@ export class MapScene extends Phaser.Scene {
     const btnMoisture = document.getElementById('btn-moisture');
 
     btnRegenerate?.addEventListener('click', () => {
-      this._generateMap(Date.now());
+      this._initializeGame(Date.now());
     });
     btnElevation?.addEventListener('click', () => {
       this._activeOverlay = this._activeOverlay === 'elevation' ? 'none' : 'elevation';
@@ -226,23 +247,36 @@ export class MapScene extends Phaser.Scene {
     });
   }
 
+  private _onRegionClick(pointer: Phaser.Input.Pointer): void {
+    if (!this._regionGrid || !this._state) return;
+
+    const scale = MAP_SIZE / PIXEL_RESOLUTION;
+    const px = Math.floor(pointer.worldX / scale);
+    const py = Math.floor(pointer.worldY / scale);
+
+    if (px < 0 || px >= PIXEL_RESOLUTION || py < 0 || py >= PIXEL_RESOLUTION) return;
+
+    const screenIdx = py * PIXEL_RESOLUTION + px;
+    const s2s = this._screenToSource;
+    const sourceIdx = s2s ? s2s[screenIdx] : -1;
+    const region = sourceIdx >= 0
+      ? this._regionGrid[sourceIdx]
+      : this._regionGrid[screenIdx];
+
+    this._ui.showRegionInfo(region);
+  }
+
   private _updateHoveredRegion(): void {
     if (!this._regionGrid) return;
 
     const pointer = this.input.activePointer;
-    const cam = this.cameras.main;
-    const worldX = pointer.worldX;
-    const worldY = pointer.worldY;
-
-    // World coords → pixel coords
     const scale = MAP_SIZE / PIXEL_RESOLUTION;
-    const px = Math.floor(worldX / scale);
-    const py = Math.floor(worldY / scale);
+    const px = Math.floor(pointer.worldX / scale);
+    const py = Math.floor(pointer.worldY / scale);
 
     let region = -1;
     if (px >= 0 && px < PIXEL_RESOLUTION && py >= 0 && py < PIXEL_RESOLUTION) {
       const screenIdx = py * PIXEL_RESOLUTION + px;
-      // Use screen-to-source map so hover matches the extruded (displaced) terrain
       const s2s = this._screenToSource;
       const sourceIdx = s2s ? s2s[screenIdx] : -1;
       if (sourceIdx >= 0) {
@@ -263,7 +297,6 @@ export class MapScene extends Phaser.Scene {
         for (let i = 0; i < total; i++) {
           if (grid[i] !== region) continue;
           if (ext) {
-            // Map source pixel to extruded screen position
             const sx = i % N;
             const sy = ((i - sx) / N) - ext[i];
             if (sy >= 0 && sy < N) {
@@ -277,138 +310,134 @@ export class MapScene extends Phaser.Scene {
     }
   }
 
-  private _buildElevationOverlay(
-    topo: TopographyGenerator,
-    regionGrid: Uint16Array | null,
-  ): Uint32Array | null {
-    if (!regionGrid) return null;
-
+  private _buildElevationOverlay(regionGrid: Uint16Array | null): Uint32Array | null {
+    if (!regionGrid || !this._state) return null;
+    const topo = this._state.topo;
     const N = PIXEL_RESOLUTION;
     const total = N * N;
     const overlay = new Uint32Array(total);
 
-    // Low (deep green) → high (white) gradient
     for (let i = 0; i < total; i++) {
       const e = Math.min(1, Math.max(0, topo.elevation[regionGrid[i]]));
       const r = Math.floor(0x1a * (1 - e) + 0xff * e);
       const g = Math.floor(0x4a * (1 - e) + 0xff * e);
       const b = Math.floor(0x2a * (1 - e) + 0xff * e);
-      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r; // ABGR
+      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r;
     }
 
     return overlay;
   }
 
-  private _buildMoistureOverlay(
-    hydro: HydrologyGenerator,
-    regionGrid: Uint16Array | null,
-  ): Uint32Array | null {
-    if (!regionGrid) return null;
-
+  private _buildMoistureOverlay(regionGrid: Uint16Array | null): Uint32Array | null {
+    if (!regionGrid || !this._state) return null;
+    const hydro = this._state.hydro;
     const N = PIXEL_RESOLUTION;
     const total = N * N;
     const overlay = new Uint32Array(total);
 
-    // Dry (warm tan) → wet (deep blue) gradient with wider color range
-    // t=0 (dry): (0xB0, 0x85, 0x30)  t=1 (wet): (0x10, 0x30, 0xB0)
     for (let i = 0; i < total; i++) {
       const m = Math.min(1, Math.max(0, hydro.moisture[regionGrid[i]]));
       const r = Math.floor(0xb0 * (1 - m) + 0x10 * m);
       const g = Math.floor(0x85 * (1 - m) + 0x30 * m);
       const b = Math.floor(0x30 * (1 - m) + 0xb0 * m);
-      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r; // ABGR
+      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r;
     }
 
     return overlay;
   }
 
-  private _buildAirMoistureOverlay(
-    hydro: HydrologyGenerator,
-    regionGrid: Uint16Array | null,
-  ): Uint32Array | null {
-    if (!regionGrid) return null;
-
+  private _buildAirMoistureOverlay(regionGrid: Uint16Array | null): Uint32Array | null {
+    if (!regionGrid || !this._state) return null;
+    const hydro = this._state.hydro;
     const N = PIXEL_RESOLUTION;
     const total = N * N;
     const overlay = new Uint32Array(total);
 
-    // Cyan (high air moisture) → red (depleted) gradient
     for (let i = 0; i < total; i++) {
       const m = Math.min(1, Math.max(0, hydro.airMoisture[regionGrid[i]]));
       const r = Math.floor(0xd0 * (1 - m) + 0x10 * m);
       const g = Math.floor(0x20 * (1 - m) + 0xb0 * m);
       const b = Math.floor(0x20 * (1 - m) + 0xd0 * m);
-      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r; // ABGR
+      overlay[i] = (255 << 24) | (b << 16) | (g << 8) | r;
     }
 
     return overlay;
   }
 
-  private _generateMap(seed: number): void {
-    const topo = new TopographyGenerator(MAP_SIZE, seed);
-    const hydro = new HydrologyGenerator(topo, seed);
+  /**
+   * Initialize game state and render the map.
+   * Replaces the old _generateMap with state/rendering separation.
+   */
+  private _initializeGame(seed: number): void {
+    // --- Create game state ---
+    this._state = createGameState(seed, MAP_SIZE);
+    const { topo, hydro, duchies } = this._state;
 
-    console.log('[Hydrology]', {
+    console.log('[Game]', {
+      seed,
       regions: topo.mesh.numRegions,
       rivers: hydro.rivers.length,
-      longestRiver: hydro.rivers[0]?.length ?? 0,
-      precipRange: [
-        Math.min(...Array.from(hydro.precipitation)),
-        Math.max(...Array.from(hydro.precipitation)),
-      ],
-      moistureRange: [
-        Math.min(...Array.from(hydro.moisture)),
-        Math.max(...Array.from(hydro.moisture)),
-      ],
+      duchies: duchies.map(d => `${d.name} (${d.regions.length} regions)`),
     });
 
+    // --- Render map ---
     const renderer = new GroundRenderer();
     const pixels = renderer.render(topo, PIXEL_RESOLUTION, hydro);
 
-    // Beaches, ocean sparkles, sea stacks (before trees so trees overlay beaches)
+    // Duchy territory tint + borders (after ground, before trees)
+    if (renderer.regionGrid) {
+      renderDuchies(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION);
+    }
+
+    // Beaches, ocean sparkles, sea stacks
     const coastalRenderer = new CoastalRenderer();
     coastalRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
 
-    // River deltas and harbors at river mouths
+    // River deltas and harbors
     const deltaRenderer = new RiverDeltaRenderer();
     deltaRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
 
-    // Static rivers (drawn before trees so tree canopies overlay rivers)
+    // Static rivers
     renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
 
-    // Trees (returns mask of pixels covered by tree sprites)
+    // Trees
     const treeRenderer = new TreeRenderer();
     const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
 
-    // Terrain extrusion (faux-3D) — after trees so peaks overlay trees
+    // Mountain extrusion
     const mountainRenderer = new MountainRenderer();
     mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, treeMask);
     this._extrusionMap = mountainRenderer.extrusionMap;
     this._screenToSource = mountainRenderer.screenToSource;
 
-    // River animator pre-computes pixel positions; skips tree-covered pixels
+    // River animator
     const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask);
     riverAnimator.extrusionMap = mountainRenderer.extrusionMap;
     riverAnimator.animate(pixels, 0);
 
-    // Coastal animation first frame (with extrusion remapping)
+    // Coastal animation
     coastalRenderer.extrusionMap = mountainRenderer.extrusionMap;
     coastalRenderer.animate(pixels, 0);
 
-    // Store refs for per-frame animation
+    // Store refs
     this._pixels = pixels;
     this._riverAnimator = riverAnimator;
     this._coastalRenderer = coastalRenderer;
     this._regionGrid = renderer.regionGrid;
     this._hoveredRegion = -1;
     this._highlightIndices = [];
-    this._moistureOverlay = this._buildMoistureOverlay(hydro, renderer.regionGrid);
-    this._elevationOverlay = this._buildElevationOverlay(topo, renderer.regionGrid);
-    this._airMoistureOverlay = this._buildAirMoistureOverlay(hydro, renderer.regionGrid);
+    this._moistureOverlay = this._buildMoistureOverlay(renderer.regionGrid);
+    this._elevationOverlay = this._buildElevationOverlay(renderer.regionGrid);
+    this._airMoistureOverlay = this._buildAirMoistureOverlay(renderer.regionGrid);
     this._activeOverlay = 'none';
 
-    const texKey = 'topo';
+    // Update UI
+    if (this._ui && renderer.regionGrid) {
+      this._ui.setState(this._state, renderer.regionGrid);
+    }
 
+    // Create texture
+    const texKey = 'topo';
     if (this.textures.exists(texKey)) {
       this.textures.remove(texKey);
     }
@@ -418,11 +447,9 @@ export class MapScene extends Phaser.Scene {
     const imageData = ctx.createImageData(PIXEL_RESOLUTION, PIXEL_RESOLUTION);
 
     new Uint8ClampedArray(imageData.data.buffer).set(new Uint8Array(pixels.buffer));
-
     ctx.putImageData(imageData, 0, 0);
     canvasTex.refresh();
 
-    // Store for update loop
     this._canvasTex = canvasTex;
     this._ctx = ctx;
     this._imageData = imageData;

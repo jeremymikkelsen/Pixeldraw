@@ -1,0 +1,54 @@
+/**
+ * Central game state — serializable, separate from rendering.
+ * All game data lives here; renderers only read from it.
+ */
+
+import { TopographyGenerator } from '../generators/TopographyGenerator';
+import { HydrologyGenerator } from '../generators/HydrologyGenerator';
+import { Season, nextSeason } from './Season';
+import { Duchy } from './Duchy';
+import { generateDuchies } from './DuchyGenerator';
+
+export interface GameState {
+  seed: number;
+  turn: number;
+  season: Season;
+  year: number;
+
+  // Terrain (generated once, immutable after creation)
+  topo: TopographyGenerator;
+  hydro: HydrologyGenerator;
+
+  // Political
+  duchies: Duchy[];
+  regionToDuchy: Int8Array;
+}
+
+/**
+ * Create a fully initialized GameState from a seed.
+ */
+export function createGameState(seed: number, mapSize: number): GameState {
+  const topo = new TopographyGenerator(mapSize, seed);
+  const hydro = new HydrologyGenerator(topo, seed);
+  const { duchies, regionToDuchy } = generateDuchies(topo, hydro, seed);
+
+  return {
+    seed,
+    turn: 0,
+    season: Season.Spring,
+    year: 1,
+    topo,
+    hydro,
+    duchies,
+    regionToDuchy,
+  };
+}
+
+/**
+ * Advance the game by one turn (one season).
+ */
+export function advanceTurn(state: GameState): void {
+  state.turn++;
+  state.season = nextSeason(state.season);
+  state.year = Math.floor(state.turn / 4) + 1;
+}

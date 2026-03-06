@@ -454,11 +454,11 @@ export class MapScene extends Phaser.Scene {
     // Static rivers
     renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
 
-    // Structures (cottages, manors) — before trees so trees grow around buildings
+    // Structure placement (before trees so trees grow around buildings)
     const structureRenderer = new StructureRenderer();
-    const structureMask = structureRenderer.renderStructures(
-      pixels, topo, hydro, PIXEL_RESOLUTION, seed,
-      this._state.duchies, this._state.regionToDuchy, season,
+    const { structures, mask: structureMask } = structureRenderer.placeStructures(
+      topo, hydro, PIXEL_RESOLUTION, seed,
+      this._state.duchies, this._state.regionToDuchy,
     );
 
     // Trees with seasonal palettes (pass structureMask to avoid overlapping buildings)
@@ -480,10 +480,13 @@ export class MapScene extends Phaser.Scene {
     coastalRenderer.extrusionMap = mountainRenderer.extrusionMap;
     coastalRenderer.animate(pixels, 0);
 
-    // Duchy borders on the very top (over trees, mountains, everything)
+    // Duchy borders over trees and mountains
     if (renderer.regionGrid) {
       renderDuchyBordersOnTop(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION, mountainRenderer.extrusionMap);
     }
+
+    // Structures on top of duchy borders (3/4 perspective with ground shadows)
+    structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season);
 
     // Store refs
     this._pixels = pixels;

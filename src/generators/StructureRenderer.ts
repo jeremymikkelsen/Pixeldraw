@@ -662,6 +662,7 @@ export class StructureRenderer {
 
   // -----------------------------------------------------------------------
   // Stamp a loaded PNG sprite (for manor replacement)
+  // Renders at 50% scale using nearest-neighbor sampling.
   // -----------------------------------------------------------------------
   private _stampLoadedSprite(
     pixels: Uint32Array, N: number,
@@ -669,23 +670,28 @@ export class StructureRenderer {
     sprite: LoadedSprite,
   ): void {
     const { px: tx, py: ty, flipped } = s;
-    const { w, h, pixels: srcPixels } = sprite;
+    const { w: srcW, h: srcH, pixels: srcPixels } = sprite;
 
-    const startX = tx - Math.floor(w / 2);
-    const startY = ty - h + Math.floor(h * 0.15); // anchor near bottom
+    const scale = 0.5;
+    const dstW = Math.round(srcW * scale);
+    const dstH = Math.round(srcH * scale);
 
-    for (let sy = 0; sy < h; sy++) {
-      for (let sx = 0; sx < w; sx++) {
-        const srcX = flipped ? (w - 1 - sx) : sx;
-        const srcIdx = sy * w + srcX;
-        const abgr = srcPixels[srcIdx];
+    const startX = tx - Math.floor(dstW / 2);
+    const startY = ty - dstH + Math.floor(dstH * 0.15); // anchor near bottom
+
+    for (let dy = 0; dy < dstH; dy++) {
+      const srcY = Math.floor(dy / scale);
+      for (let dx = 0; dx < dstW; dx++) {
+        const srcX = Math.floor(dx / scale);
+        const flippedX = flipped ? (srcW - 1 - srcX) : srcX;
+        const abgr = srcPixels[srcY * srcW + flippedX];
 
         // Skip fully transparent pixels
         const alpha = (abgr >>> 24) & 0xff;
         if (alpha < 10) continue;
 
-        const px = startX + sx;
-        const py = startY + sy;
+        const px = startX + dx;
+        const py = startY + dy;
         if (px < 0 || px >= N || py < 0 || py >= N) continue;
 
         const dstIdx = py * N + px;

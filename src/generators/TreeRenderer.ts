@@ -206,34 +206,67 @@ const CONIFER_TEMPLATES: SpriteTemplate[] = [
 // All non-transparent pixels use T (trunk/branch color)
 // ---------------------------------------------------------------------------
 const BARE_TEMPLATES: SpriteTemplate[] = [
-  // Small bare tree (5×8) — simple Y-fork
+  // Small — leaning single branch
+  { w: 5, h: 7, data: [
+    _, _, _, T, _,
+    _, _, T, _, _,
+    _, T, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+  ]},
+  // Small — forked top
   { w: 5, h: 8, data: [
     _, T, _, T, _,
     _, T, _, T, _,
     _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+  ]},
+  // Small — three prongs
+  { w: 5, h: 8, data: [
+    T, _, T, _, T,
     _, T, T, T, _,
     _, _, T, _, _,
     _, _, T, _, _,
     _, _, T, _, _,
     _, _, T, _, _,
-  ]},
-  // Small bare variant (5×8) — asymmetric
-  { w: 5, h: 8, data: [
-    T, _, _, _, T,
-    _, T, _, T, _,
-    _, T, _, T, _,
-    _, _, T, _, _,
-    _, _, T, _, _,
-    _, _, T, _, _,
     _, _, T, _, _,
     _, _, T, _, _,
   ]},
-  // Medium bare tree (7×10) — multi-branch
+  // Small — bent trunk with stub
+  { w: 5, h: 7, data: [
+    _, _, T, _, _,
+    _, _, T, T, _,
+    _, _, T, _, _,
+    _, T, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+  ]},
+  // Medium — layered branches alternating sides
+  { w: 7, h: 10, data: [
+    _, _, _, T, _, _, _,
+    _, _, T, T, _, _, _,
+    _, _, _, T, T, _, _,
+    _, _, T, T, _, _, _,
+    _, _, _, T, _, T, _,
+    _, T, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+  ]},
+  // Medium — upswept branches
   { w: 7, h: 10, data: [
     _, T, _, _, _, T, _,
-    _, T, _, _, _, T, _,
     _, _, T, _, T, _, _,
     _, _, T, _, T, _, _,
+    _, _, _, T, _, _, _,
     _, _, _, T, _, _, _,
     _, _, T, T, T, _, _,
     _, _, _, T, _, _, _,
@@ -241,42 +274,55 @@ const BARE_TEMPLATES: SpriteTemplate[] = [
     _, _, _, T, _, _, _,
     _, _, _, T, _, _, _,
   ]},
-  // Medium bare variant (7×11) — spreading crown
+  // Medium — asymmetric reaching
   { w: 7, h: 11, data: [
-    T, _, _, _, _, _, T,
+    T, _, _, _, _, _, _,
     _, T, _, _, _, T, _,
+    _, _, T, _, T, _, _,
+    _, _, T, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, T, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+  ]},
+  // Medium — candelabra
+  { w: 7, h: 10, data: [
+    _, T, _, T, _, T, _,
     _, T, _, T, _, T, _,
     _, _, T, T, T, _, _,
     _, _, _, T, _, _, _,
-    _, _, T, T, _, _, _,
+    _, _, _, T, _, _, _,
     _, _, _, T, _, _, _,
     _, _, _, T, _, _, _,
     _, _, _, T, _, _, _,
     _, _, _, T, _, _, _,
     _, _, _, T, _, _, _,
   ]},
-  // Large bare tree (9×12) — wide branching canopy
+  // Large — wide oak silhouette with sub-branches
   { w: 9, h: 12, data: [
-    T, _, _, _, _, _, _, _, T,
     _, T, _, _, _, _, _, T, _,
+    _, _, T, _, _, _, T, _, _,
+    T, _, _, T, _, T, _, _, T,
     _, T, _, _, T, _, _, T, _,
     _, _, T, _, T, _, T, _, _,
     _, _, _, T, T, T, _, _, _,
     _, _, _, _, T, _, _, _, _,
-    _, _, _, T, T, T, _, _, _,
     _, _, _, _, T, _, _, _, _,
     _, _, _, _, T, _, _, _, _,
     _, _, _, _, T, _, _, _, _,
     _, _, _, _, T, _, _, _, _,
     _, _, _, _, T, _, _, _, _,
   ]},
-  // Large bare variant (9×13) — gnarled with sub-branches
+  // Large — elm shape, drooping outer branches
   { w: 9, h: 13, data: [
-    _, T, _, _, _, _, _, T, _,
     _, _, T, _, _, _, T, _, _,
-    T, _, T, _, _, _, T, _, T,
-    _, T, _, T, _, T, _, T, _,
-    _, _, _, T, _, T, _, _, _,
+    _, T, _, _, _, _, _, T, _,
+    _, T, _, _, T, _, _, T, _,
+    _, _, T, _, T, _, T, _, _,
+    _, _, _, T, T, T, _, _, _,
     _, _, _, _, T, _, _, _, _,
     _, _, _, T, T, _, _, _, _,
     _, _, _, _, T, _, _, _, _,
@@ -285,6 +331,21 @@ const BARE_TEMPLATES: SpriteTemplate[] = [
     _, _, _, _, T, _, _, _, _,
     _, _, _, _, T, _, _, _, _,
     _, _, _, _, T, _, _, _, _,
+  ]},
+  // Large — twisted with horizontal reach
+  { w: 9, h: 12, data: [
+    _, _, _, _, _, _, T, _, _,
+    _, T, _, _, _, T, _, _, _,
+    _, _, T, _, _, _, T, _, _,
+    _, _, _, T, _, T, _, T, _,
+    _, T, _, _, T, _, _, _, _,
+    _, _, T, T, T, _, _, _, _,
+    _, _, _, T, _, _, _, _, _,
+    _, _, _, T, _, _, _, _, _,
+    _, _, _, T, _, _, _, _, _,
+    _, _, _, T, _, _, _, _, _,
+    _, _, _, T, _, _, _, _, _,
+    _, _, _, T, _, _, _, _, _,
   ]},
 ];
 

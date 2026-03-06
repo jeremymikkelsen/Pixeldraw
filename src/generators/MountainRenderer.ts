@@ -21,7 +21,7 @@ const LAND_START = 0.12;
 const SNOW_LINE = 0.61;
 
 // Maximum upward extrusion in pixels for the highest elevation
-const MAX_EXTRUSION = 100;
+const MAX_EXTRUSION = 150;
 
 // Minimum extrusion to bother rendering (skip very low terrain)
 const MIN_EXTRUSION = 1;
@@ -146,6 +146,18 @@ export class MountainRenderer {
     // Snapshot the current pixel buffer (preserves ground, trees, rivers)
     const srcPixels = new Uint32Array(pixels);
 
+    // Clear all land pixels that will be extruded (fixes ghost images below
+    // the raised terrain). Ocean pixels are left untouched.
+    const OCEAN_FILL = packABGR(18, 28, 55); // dark ocean blue
+    for (let i = 0; i < N * N; i++) {
+      const elev = smoothElev[i];
+      if (elev < LAND_START) continue;
+      const t = (elev - LAND_START) / (1 - LAND_START);
+      if (Math.floor(t * t * MAX_EXTRUSION) >= MIN_EXTRUSION) {
+        pixels[i] = OCEAN_FILL;
+      }
+    }
+
     // Process each column independently
     for (let x = 0; x < N; x++) {
       let horizon = N; // nothing drawn yet
@@ -184,19 +196,33 @@ export class MountainRenderer {
           const colT = extrusion > 0 ? (sy - screenTop) / extrusion : 0;
 
           // Surface pixels (top ~15%): preserve original rendered colors
-          // with slope-based brightness adjustment
+          // with slope-based brightness adjustment. Snow replaces surface
+          // colors above the snow line.
           if (colT < 0.15) {
             const surfaceLight = 0.7 + lightDot * 0.5;
             const light = Math.max(0.5, Math.min(1.2, surfaceLight));
-            // Apply lighting to the original pixel color
-            const origPixel = srcPixels[y * N + x];
-            const r = (origPixel) & 0xff;
-            const g = (origPixel >> 8) & 0xff;
-            const b = (origPixel >> 16) & 0xff;
-            const lr = Math.min(255, Math.floor(r * light));
-            const lg = Math.min(255, Math.floor(g * light));
-            const lb = Math.min(255, Math.floor(b * light));
-            pixels[sy * N + x] = packABGR(lr, lg, lb);
+
+            if (elev >= SNOW_LINE) {
+              // Snow surface: multi-shaded snow based on lighting + noise
+              const n = noise(x * 0.15, y * 0.15);
+              const snowLight = light + n * 0.15;
+              let snowRGB: number;
+              if (snowLight > 1.05) snowRGB = SNOW_HIGHLIGHT;
+              else if (snowLight > 0.85) snowRGB = SNOW_BRIGHT;
+              else if (snowLight > 0.65) snowRGB = SNOW_MID;
+              else snowRGB = SNOW_SHADOW;
+              pixels[sy * N + x] = snowRGB;
+            } else {
+              // Normal terrain: apply lighting to the original pixel color
+              const origPixel = srcPixels[y * N + x];
+              const r = (origPixel) & 0xff;
+              const g = (origPixel >> 8) & 0xff;
+              const b = (origPixel >> 16) & 0xff;
+              const lr = Math.min(255, Math.floor(r * light));
+              const lg = Math.min(255, Math.floor(g * light));
+              const lb = Math.min(255, Math.floor(b * light));
+              pixels[sy * N + x] = packABGR(lr, lg, lb);
+            }
           } else {
             // Cliff face: terrain-appropriate colors
             // Light: bright at top, gradually darker toward base, never black

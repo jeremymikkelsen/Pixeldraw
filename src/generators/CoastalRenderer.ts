@@ -63,6 +63,14 @@ export interface CoastalPixel {
 // ---------------------------------------------------------------------------
 // CoastalRenderer
 // ---------------------------------------------------------------------------
+// Wet sand colors per season (darker beach tones visible when wave recedes)
+const WET_SAND_BY_SEASON: Record<Season, number> = {
+  [Season.Spring]: packABGR(0x90, 0x80, 0x50),
+  [Season.Summer]: packABGR(0x90, 0x80, 0x50),
+  [Season.Fall]:   packABGR(0x80, 0x70, 0x48),
+  [Season.Winter]: packABGR(0x68, 0x60, 0x48),
+};
+
 export class CoastalRenderer {
   private _animatedPixels: CoastalPixel[] = [];
   private _baseColors: Map<number, number> = new Map(); // idx -> original ABGR color
@@ -377,21 +385,24 @@ export class CoastalRenderer {
           pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }
       } else if (cp.type === 'shorewave') {
-        // Rolling shore waves: a foam line sweeps in toward land, then recedes
-        // dist=0 is at the shore, higher dist = further out
-        // The "wavefront" position oscillates between 0 and WAVE_ZONE
-        const cycle = timeSec * 0.4 + cp.phase; // slow cycle with local offset
-        const waveFront = (Math.sin(cycle) + 1) / 2; // 0..1 oscillating position
-        const waveDist = waveFront * 6; // position in pixel distance from shore
-
-        // How close is this pixel to the wavefront?
+        // Rolling shore waves: foam line sweeps toward shore, then recedes
+        // dist=0 is at the shore, higher dist = further into the ocean
+        // waveDist: how far from shore the wavefront currently is
+        //   waveDist near 0 = wave has rolled all the way in
+        //   waveDist near 6 = wave has pulled all the way back
+        const cycle = timeSec * 0.4 + cp.phase;
+        const waveDist = ((Math.sin(cycle) + 1) / 2) * 6;
         const distToFront = Math.abs(cp.dist - waveDist);
 
         if (distToFront < 1.5) {
-          // In the foam band (1.5px wide)
+          // Foam band at the wavefront
           const bright = distToFront < 0.6;
           pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
+        } else if (cp.dist < waveDist) {
+          // Between shore and wave = exposed wet sand (wave has pulled back past here)
+          pixels[outIdx] = WET_SAND_BY_SEASON[this._season];
         } else {
+          // Behind the wave (ocean side) = normal water
           pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }
       }

@@ -139,6 +139,22 @@ export class MapScene extends Phaser.Scene {
     this._initializeGame(result.seed);
     this._setupScreen.destroy();
     this._setupScreen = null;
+
+    // Center camera on player's duchy capital
+    this._centerOnPlayerDuchy();
+  }
+
+  private _centerOnPlayerDuchy(): void {
+    if (!this._state) return;
+    const duchy = this._state.duchies[this._state.playerDuchy];
+    if (!duchy) return;
+
+    const capitalPos = this._state.topo.mesh.points[duchy.capitalRegion];
+    if (!capitalPos) return;
+
+    const cam = this.cameras.main;
+    cam.centerOn(capitalPos.x, capitalPos.y);
+    cam.zoom = 1.5;
   }
 
   update(time: number, delta: number): void {

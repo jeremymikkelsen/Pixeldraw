@@ -158,7 +158,8 @@ export class GroundRenderer {
         let baseRGB = palette.base[palIdx];
 
         // 2. Moisture tinting (dry = shift toward brown/yellow, wet = richer green)
-        if (hydro && regionGrid && (terrain === 'lowland' || terrain === 'highland' || terrain === 'coast')) {
+        // Skip in winter — snow covers everything, no brown dryness showing through
+        if (season !== Season.Winter && hydro && regionGrid && (terrain === 'lowland' || terrain === 'highland' || terrain === 'coast')) {
           const moisture = hydro.moisture[regionGrid[i]];
           // Dryness factor: 0 = fully wet, 1 = bone dry
           const dryness = 1 - Math.min(1, moisture / 0.7);
@@ -177,27 +178,33 @@ export class GroundRenderer {
 
         // 3. Winter snow coverage on land — blanket coverage with sparse green patches
         if (season === Season.Winter && terrain !== 'ocean' && terrain !== 'water') {
-          const dn2 = detailNoise(wx * 0.04, wy * 0.04);
-          const dn3 = detailNoise(wx * 0.12, wy * 0.12);
-          // ~90% snow everywhere; only sparse low-frequency noise patches show ground
-          const greenPatch = (dn2 > 0.6 && dn3 > 0.3); // ~8% of pixels stay green
+          // Low-frequency noise for large coherent grass patches
+          const patchNoise = detailNoise(wx * 0.008, wy * 0.008);
+          // Medium frequency to break up patch edges
+          const edgeNoise = detailNoise(wx * 0.025, wy * 0.025);
+          // Combined: only show grass where both align (large blob + soft edge)
+          const greenPatch = (patchNoise > 0.55) && (edgeNoise > 0.2);
           if (!greenPatch) {
             let r = (baseRGB >> 16) & 0xff;
             let g = (baseRGB >> 8) & 0xff;
             let b = baseRGB & 0xff;
-            // Near-white snow with slight blue tinge
-            const snowBlend = 0.92 + dn2 * 0.05;
-            r = Math.floor(r + (0xf0 - r) * snowBlend);
-            g = Math.floor(g + (0xf4 - g) * snowBlend);
-            b = Math.floor(b + (0xf8 - b) * snowBlend);
+            // Pure white snow
+            const snowBlend = 0.95 + patchNoise * 0.04;
+            r = Math.floor(r + (0xf8 - r) * snowBlend);
+            g = Math.floor(g + (0xfa - g) * snowBlend);
+            b = Math.floor(b + (0xfc - b) * snowBlend);
             baseRGB = (r << 16) | (g << 8) | b;
           }
         }
 
         // 4. Elevation shading (directional light from upper-left)
-        // (moisture tinting applied above in step 2)
+        // In winter, dampen shading on snow-covered ground so snow stays white
         const dot = slopeX[i] * LIGHT_DIR_X + slopeY[i] * LIGHT_DIR_Y;
         let lightFactor = LIGHT_BASE + dot * LIGHT_STRENGTH;
+        if (season === Season.Winter && terrain !== 'ocean' && terrain !== 'water') {
+          // Compress light range: snow doesn't get dark on slopes
+          lightFactor = 0.88 + (lightFactor - LIGHT_BASE) * 0.25;
+        }
         lightFactor = Math.max(0.35, Math.min(1.0, lightFactor));
         // Quantize for pixel-art stepped shading
         lightFactor = Math.floor(lightFactor * LIGHT_STEPS) / LIGHT_STEPS;

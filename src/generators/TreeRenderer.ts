@@ -236,10 +236,10 @@ const DECIDUOUS_PALETTES_FALL: TreePalette[] = [
   { canopy: [0x886020, 0xa07828, 0xb89030, 0xc8a438, 0xd8b840], trunk: [0x8a7860, 0x5a4a38] },
 ];
 
-// --- Winter: bare branches (trunk-colored, very sparse canopy) ---
+// --- Winter: bare branches — dark wood that contrasts against white snow ---
 const DECIDUOUS_PALETTES_WINTER: TreePalette[] = [
-  { canopy: [0x5a4838, 0x6a5848, 0x7a6858, 0x887868, 0x988878], trunk: [0x8a7860, 0x5a4a38] },
-  { canopy: [0x584638, 0x685648, 0x786658, 0x867668, 0x968678], trunk: [0x907c62, 0x604e3c] },
+  { canopy: [0x2a2018, 0x3a2c20, 0x483828, 0x584830, 0x685838], trunk: [0x3a2c20, 0x281c14] },
+  { canopy: [0x2c2218, 0x3c2e22, 0x4a3a2a, 0x5a4a32, 0x6a5a3a], trunk: [0x382a1e, 0x261a12] },
 ];
 
 // --- Conifer palettes per season ---
@@ -628,13 +628,15 @@ export class TreeRenderer {
           const distFromCenter = Math.abs(srcX - Math.floor(w / 2));
           // Keep trunk-adjacent pixels (branches) and scattered outer twigs
           if (distFromCenter <= 1) {
-            // Near trunk: keep ~50% as main branches
-            if (((tx + sy * 7) & 1) !== 0) continue;
+            // Near trunk: keep ~75% as main branches
+            if (((tx + sy * 7) & 3) === 0) continue;
           } else if (distFromCenter <= 2) {
-            // Mid-range: keep ~25% as smaller branches
-            if (((tx * 3 + sy * 5) & 3) !== 0) continue;
+            // Mid-range: keep ~50% as secondary branches
+            if (((tx * 3 + sy * 5) & 1) !== 0) continue;
+          } else if (distFromCenter <= 3) {
+            // Outer twigs: keep ~25%
+            if (((tx * 5 + sy * 3) & 3) !== 0) continue;
           } else {
-            // Outer: skip all — no leaves out here
             continue;
           }
         }

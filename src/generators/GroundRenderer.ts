@@ -195,8 +195,10 @@ export class GroundRenderer {
         let lightFactor = LIGHT_BASE + dot * LIGHT_STRENGTH;
         if (isSnow) {
           // Snow: select shade from palette based on light + noise,
-          // matching MountainRenderer's approach (no brightness dimming)
-          lightFactor = 0.88 + (lightFactor - LIGHT_BASE) * 0.25;
+          // matching MountainRenderer's approach (no brightness dimming).
+          // Base of 1.0 so flat lowland gets a mix of HIGHLIGHT and BRIGHT,
+          // matching the bright mountain snow appearance.
+          lightFactor = 1.0 + (lightFactor - LIGHT_BASE) * 0.25;
           const snowNoise = detailNoise(wx * 0.03, wy * 0.03);
           const snowLight = lightFactor + snowNoise * 0.15;
           if (snowLight > 1.05) baseRGB = 0xf0f8ff;      // SNOW_HIGHLIGHT

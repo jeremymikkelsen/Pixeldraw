@@ -14,11 +14,9 @@ import { applyBrightness, packABGR } from './TerrainPalettes';
 // with terrain-appropriate colors.
 // ---------------------------------------------------------------------------
 
-// Elevation where land begins (coast threshold from TopographyGenerator)
-const LAND_START = 0.12;
-
-// Snow line for cliff face material
-const SNOW_LINE = 0.61;
+// Snow line for cliff face material (lowered to compensate for pow(2.2)
+// elevation reshaping in TopographyGenerator — 0.8^2.2 ≈ 0.62)
+const SNOW_LINE = 0.48;
 
 // Maximum upward extrusion in pixels for the highest elevation
 const MAX_EXTRUSION = 150;
@@ -146,17 +144,10 @@ export class MountainRenderer {
     // Snapshot the current pixel buffer (preserves ground, trees, rivers)
     const srcPixels = new Uint32Array(pixels);
 
-    // Clear all land pixels that will be extruded (fixes ghost images below
-    // the raised terrain). Ocean pixels are left untouched.
-    const OCEAN_FILL = packABGR(18, 28, 55); // dark ocean blue
-    for (let i = 0; i < N * N; i++) {
-      const elev = smoothElev[i];
-      if (elev < LAND_START) continue;
-      const t = (elev - LAND_START) / (1 - LAND_START);
-      if (Math.floor(t * t * MAX_EXTRUSION) >= MIN_EXTRUSION) {
-        pixels[i] = OCEAN_FILL;
-      }
-    }
+    // Clear entire buffer — every pixel will be redrawn at its extruded
+    // position. Background is dark navy (visible where terrain doesn't reach).
+    const BG_FILL = packABGR(12, 18, 40);
+    pixels.fill(BG_FILL);
 
     // Process each column independently
     for (let x = 0; x < N; x++) {
@@ -165,12 +156,14 @@ export class MountainRenderer {
       // Scan FRONT to BACK: south (y=N-1) → north (y=0)
       for (let y = N - 1; y >= 0; y--) {
         const elev = smoothElev[y * N + x];
-        if (elev < LAND_START) continue;
 
-        // Extrusion height: t² curve (low land barely rises, peaks dramatic)
-        const t = (elev - LAND_START) / (1 - LAND_START);
-        const extrusion = Math.floor(t * t * MAX_EXTRUSION);
-        if (extrusion < MIN_EXTRUSION) continue;
+        // Extrusion height: t² curve (ocean barely rises, peaks dramatic)
+        const extrusion = Math.floor(elev * elev * MAX_EXTRUSION);
+        if (extrusion < MIN_EXTRUSION) {
+          // No extrusion — just copy original pixel in place
+          pixels[y * N + x] = srcPixels[y * N + x];
+          continue;
+        }
 
         // Screen position of the extruded top
         const screenTop = y - extrusion;

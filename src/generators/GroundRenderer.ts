@@ -185,15 +185,13 @@ export class GroundRenderer {
           // Combined: only show grass where both align (large blob + soft edge)
           const greenPatch = (patchNoise > 0.55) && (edgeNoise > 0.2);
           if (!greenPatch) {
-            let r = (baseRGB >> 16) & 0xff;
-            let g = (baseRGB >> 8) & 0xff;
-            let b = baseRGB & 0xff;
-            // Pure white snow
-            const snowBlend = 0.95 + patchNoise * 0.04;
-            r = Math.floor(r + (0xf8 - r) * snowBlend);
-            g = Math.floor(g + (0xfa - g) * snowBlend);
-            b = Math.floor(b + (0xfc - b) * snowBlend);
-            baseRGB = (r << 16) | (g << 8) | b;
+            // Fixed snow color — uniform across all terrain types
+            // Slight noise variation for texture, but no terrain color bleed-through
+            const snowShade = patchNoise * 0.02; // very subtle variation
+            const r = Math.floor(0xf6 + snowShade * 0xff);
+            const g = Math.floor(0xf8 + snowShade * 0xff);
+            const b = Math.floor(0xfc + snowShade * 0xff);
+            baseRGB = (Math.min(255, r) << 16) | (Math.min(255, g) << 8) | Math.min(255, b);
           }
         }
 

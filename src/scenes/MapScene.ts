@@ -36,6 +36,7 @@ export class MapScene extends Phaser.Scene {
   private _hoveredRegion = -1;
   private _highlightIndices: number[] = [];
   private _extrusionMap: Int16Array | null = null;
+  private _screenToSource: Int32Array | null = null;
 
   // Debug overlays
   private _moistureOverlay!: Uint32Array | null;
@@ -240,7 +241,15 @@ export class MapScene extends Phaser.Scene {
 
     let region = -1;
     if (px >= 0 && px < PIXEL_RESOLUTION && py >= 0 && py < PIXEL_RESOLUTION) {
-      region = this._regionGrid[py * PIXEL_RESOLUTION + px];
+      const screenIdx = py * PIXEL_RESOLUTION + px;
+      // Use screen-to-source map so hover matches the extruded (displaced) terrain
+      const s2s = this._screenToSource;
+      const sourceIdx = s2s ? s2s[screenIdx] : -1;
+      if (sourceIdx >= 0) {
+        region = this._regionGrid[sourceIdx];
+      } else {
+        region = this._regionGrid[screenIdx];
+      }
     }
 
     if (region !== this._hoveredRegion) {
@@ -373,8 +382,9 @@ export class MapScene extends Phaser.Scene {
 
     // Terrain extrusion (faux-3D) — after trees so peaks overlay trees
     const mountainRenderer = new MountainRenderer();
-    mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed);
+    mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, treeMask);
     this._extrusionMap = mountainRenderer.extrusionMap;
+    this._screenToSource = mountainRenderer.screenToSource;
 
     // River animator pre-computes pixel positions; skips tree-covered pixels
     const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask);

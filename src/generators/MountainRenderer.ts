@@ -6,12 +6,15 @@ import { applyBrightness, packABGR } from './TerrainPalettes';
 // Terrain Extrusion Renderer (two-pass displacement + gap interpolation)
 //
 // Pass 1: every source pixel is copied to its extruded screen position.
-// Pass 2: empty gaps are filled by extending the surface pixel above with
-//          progressive darkening (smooth slopes), not hard cliff-face textures.
+// Pass 2: empty gaps are filled — small gaps darken surface above, large
+//          gaps show rock cliff-face material.
 // ---------------------------------------------------------------------------
 
-// Snow line (lowered to compensate for pow(2.2) elevation reshaping)
-const SNOW_LINE = 0.48;
+// Snow line — only the highest peaks get snow. Below this is bare rock.
+const SNOW_LINE = 0.62;
+
+// Rock zone: exposed stone above treeline but below snow
+const ROCK_LINE = 0.48;
 
 // Maximum upward extrusion in pixels for the highest elevation
 const MAX_EXTRUSION = 150;
@@ -22,14 +25,26 @@ const SNOW_MID       = 0xc8d8e8;
 const SNOW_BRIGHT    = 0xe0ecf4;
 const SNOW_HIGHLIGHT = 0xf0f8ff;
 
-// Minimum gap height (in pixels) to show a cliff face. Smaller gaps just
-// darken the surface pixel above. Eliminates brown micro-lines on hills.
-const CLIFF_GAP_THRESHOLD = 12;
+// Rock surface palette (exposed stone between treeline and snow)
+const ROCK_DARK   = 0x5a4838;
+const ROCK_MID    = 0x7a6048;
+const ROCK_LIGHT  = 0x8a7258;
+const ROCK_WARM   = 0x9a7850;
+
+// Minimum gap height (in pixels) to show cliff-face rock material.
+// Smaller gaps just darken the surface pixel above.
+const CLIFF_GAP_THRESHOLD = 6;
 
 // Cliff face palette for large drops
-const CLIFF_WARM_DARK  = 0x5a3c28;
-const CLIFF_WARM_MID   = 0x7a5438;
-const CLIFF_WARM_LIGHT = 0x9a7048;
+const CLIFF_DARK   = 0x4a3828;
+const CLIFF_MID    = 0x6a5038;
+const CLIFF_LIGHT  = 0x8a6848;
+const CLIFF_HOT    = 0xa07850;
+
+// Cool gray rock for snow-zone cliffs
+const CLIFF_SNOW_DARK  = 0x585060;
+const CLIFF_SNOW_MID   = 0x787078;
+const CLIFF_SNOW_LIGHT = 0x989090;
 
 // Helper: pack a snow constant (0xRRGGBB) into ABGR with alpha=255
 function packSnow(rgb: number): number {
@@ -38,10 +53,10 @@ function packSnow(rgb: number): number {
 
 // ---------------------------------------------------------------------------
 export class MountainRenderer {
-  // Extrusion displacement map: for each source pixel index, the vertical
-  // offset (in pixels) it was shifted upward.
   extrusionMap: Int16Array | null = null;
-  // Resolution stored for animation remapping
+  // Inverse map: for each screen pixel, which source flat index was mapped there.
+  // -1 means no source (gap-fill or empty).
+  screenToSource: Int32Array | null = null;
   resolution = 0;
 
   render(
@@ -49,9 +64,12 @@ export class MountainRenderer {
     topo: TopographyGenerator,
     resolution: number,
     seed: number,
+    treeMask?: Uint8Array,
   ): void {
     const rngNoise = mulberry32(seed ^ 0x904e);
     const noise = createNoise2D(rngNoise);
+    const rngNoise2 = mulberry32(seed ^ 0x1234);
+    const noise2 = createNoise2D(rngNoise2);
     const N = resolution;
     this.resolution = N;
     const scale = topo.size / N;
@@ -93,19 +111,7 @@ export class MountainRenderer {
       }
     }
 
-    this._extrudeTerrain(pixels, elevGrid, N, noise);
-  }
-
-  // Remap a flat buffer index to its extruded screen index.
-  // Returns -1 if off-screen.
-  remapIndex(flatIdx: number): number {
-    if (!this.extrusionMap) return flatIdx;
-    const N = this.resolution;
-    const x = flatIdx % N;
-    const y = (flatIdx - x) / N;
-    const screenY = y - this.extrusionMap[flatIdx];
-    if (screenY < 0 || screenY >= N) return -1;
-    return screenY * N + x;
+    this._extrudeTerrain(pixels, elevGrid, N, noise, noise2, treeMask);
   }
 
   // -----------------------------------------------------------------------
@@ -114,6 +120,8 @@ export class MountainRenderer {
     elevGrid: Float32Array,
     N: number,
     noise: NoiseFunction2D,
+    noise2: NoiseFunction2D,
+    treeMask?: Uint8Array,
   ): void {
     // Smooth elevation (7×7 box blur)
     const smoothElev = new Float32Array(N * N);
@@ -135,9 +143,14 @@ export class MountainRenderer {
       }
     }
 
-    // Pre-paint snow onto buffer (properly packed with alpha)
+    // Pre-paint snow and rock onto buffer — but SKIP tree pixels
     for (let i = 0; i < N * N; i++) {
-      if (smoothElev[i] >= SNOW_LINE) {
+      const elev = smoothElev[i];
+      // Don't paint over trees
+      if (treeMask && treeMask[i]) continue;
+
+      if (elev >= SNOW_LINE) {
+        // Snow: only the highest peaks
         const px = i % N, py = (i - px) / N;
         const n = noise(px * 0.15, py * 0.15);
         const snowVal = 0.7 + n * 0.2;
@@ -145,10 +158,27 @@ export class MountainRenderer {
         else if (snowVal > 0.7) pixels[i] = packSnow(SNOW_BRIGHT);
         else if (snowVal > 0.55) pixels[i] = packSnow(SNOW_MID);
         else pixels[i] = packSnow(SNOW_SHADOW);
+      } else if (elev >= ROCK_LINE) {
+        // Exposed rock between treeline and snow
+        const px = i % N, py = (i - px) / N;
+        const n = noise2(px * 0.12, py * 0.12);
+        const n2 = noise(px * 0.08, py * 0.08);
+        // Mix snow patches into upper rock zone
+        const snowChance = (elev - ROCK_LINE) / (SNOW_LINE - ROCK_LINE);
+        if (n2 > 0.3 && snowChance > 0.6) {
+          pixels[i] = packSnow(SNOW_SHADOW);
+        } else {
+          let rgb: number;
+          if (n > 0.3) rgb = ROCK_WARM;
+          else if (n > 0.0) rgb = ROCK_LIGHT;
+          else if (n > -0.3) rgb = ROCK_MID;
+          else rgb = ROCK_DARK;
+          pixels[i] = applyBrightness(rgb, 1.0);
+        }
       }
     }
 
-    // Snapshot source pixels (includes snow), then clear output
+    // Snapshot source pixels (includes snow/rock/trees), then clear output
     const srcPixels = new Uint32Array(pixels);
     pixels.fill(0);
 
@@ -159,8 +189,10 @@ export class MountainRenderer {
     }
     this.extrusionMap = extMap;
 
+    // Screen-to-source inverse map
+    const s2s = new Int32Array(N * N).fill(-1);
+
     // --- Pass 1: Displacement ---
-    // Copy every source pixel to its extruded screen position.
     // North→south so southern (front) pixels overwrite northern.
     for (let x = 0; x < N; x++) {
       for (let y = 0; y < N; y++) {
@@ -176,11 +208,15 @@ export class MountainRenderer {
         const eR = x < N - 1 ? smoothElev[idx + 1] : elev;
         const eU = y > 0 ? smoothElev[idx - N] : elev;
         const eD = y < N - 1 ? smoothElev[idx + N] : elev;
-        const lightDot = (eR - eL) * 80 * -0.707 + (eD - eU) * 80 * -0.707;
-        const surfaceLight = 0.7 + lightDot * 0.5;
-        const light = Math.max(0.5, Math.min(1.2, surfaceLight));
+        const slopeX = (eR - eL) * 80;
+        const slopeY = (eD - eU) * 80;
+        const lightDot = slopeX * -0.707 + slopeY * -0.707;
 
-        if (elev >= SNOW_LINE) {
+        // Stronger shadow range for back-facing slopes
+        const surfaceLight = 0.65 + lightDot * 0.6;
+        const light = Math.max(0.35, Math.min(1.3, surfaceLight));
+
+        if (elev >= SNOW_LINE && !(treeMask && treeMask[idx])) {
           const n = noise(x * 0.15, y * 0.15);
           const snowLight = light + n * 0.15;
           if (snowLight > 1.05) pixels[sidx] = packSnow(SNOW_HIGHLIGHT);
@@ -198,51 +234,59 @@ export class MountainRenderer {
             Math.min(255, Math.floor(b * light)),
           );
         }
+        s2s[sidx] = idx;
       }
     }
 
+    this.screenToSource = s2s;
+
     // --- Pass 2: Interpolate gaps ---
-    // Scan each column top→bottom. Empty pixels below a surface pixel are
-    // filled by extending the surface above with progressive darkening.
-    // For large gaps (steep cliffs), use cliff-face coloring below a threshold.
     for (let x = 0; x < N; x++) {
       let lastColor = 0;
       let lastElev = 0;
+      let lastSourceIdx = -1;
       let gapStart = -1;
 
       for (let sy = 0; sy < N; sy++) {
         const sidx = sy * N + x;
         if (pixels[sidx] !== 0) {
-          // Surface pixel found — fill any gap above
           if (gapStart >= 0 && lastColor !== 0) {
-            this._fillGap(pixels, x, gapStart, sy, lastColor, lastElev, N, noise);
+            this._fillGap(pixels, s2s, x, gapStart, sy, lastColor, lastElev,
+              lastSourceIdx, N, noise, noise2);
           }
           lastColor = pixels[sidx];
-          lastElev = smoothElev[sy * N + x] || lastElev;
+          const srcIdx = s2s[sidx];
+          if (srcIdx >= 0) {
+            lastElev = smoothElev[srcIdx];
+            lastSourceIdx = srcIdx;
+          }
           gapStart = -1;
         } else if (lastColor !== 0) {
           if (gapStart < 0) gapStart = sy;
         }
       }
-      // Trailing gap at bottom
       if (gapStart >= 0 && lastColor !== 0) {
-        this._fillGap(pixels, x, gapStart, N, lastColor, lastElev, N, noise);
+        this._fillGap(pixels, s2s, x, gapStart, N, lastColor, lastElev,
+          lastSourceIdx, N, noise, noise2);
       }
     }
   }
 
-  // Fill a vertical gap in a column by extending the surface above.
-  // Small gaps: darken the surface color progressively.
-  // Large gaps: use cliff-face material for the lower portion.
+  // Fill a vertical gap in a column.
+  // Small gaps: darken the surface color (gentle slope).
+  // Large gaps: rock cliff-face material.
   private _fillGap(
     pixels: Uint32Array,
+    s2s: Int32Array,
     x: number,
     gapTop: number,
     gapBot: number,
     surfaceColor: number,
     elev: number,
+    sourceIdx: number,
     N: number,
     noise: NoiseFunction2D,
+    noise2: NoiseFunction2D,
   ): void {
     const gapHeight = gapBot - gapTop;
 
@@ -252,25 +296,43 @@ export class MountainRenderer {
     const sb = (surfaceColor >> 16) & 0xff;
 
     for (let gy = gapTop; gy < gapBot; gy++) {
-      const t = (gy - gapTop) / Math.max(1, gapHeight); // 0=top, 1=bottom
+      const t = (gy - gapTop) / Math.max(1, gapHeight);
+      const gidx = gy * N + x;
 
-      if (gapHeight >= CLIFF_GAP_THRESHOLD && t > 0.3) {
-        // Large gap: cliff face material for the lower 70%
-        const cliffT = (t - 0.3) / 0.7;
-        let light = 0.7 - cliffT * 0.15;
+      // Propagate source index for hover lookup
+      if (sourceIdx >= 0) s2s[gidx] = sourceIdx;
+
+      if (gapHeight >= CLIFF_GAP_THRESHOLD && t > 0.25) {
+        // Rock cliff face for the lower 75%
+        const cliffT = (t - 0.25) / 0.75;
+        let light = 0.65 - cliffT * 0.2;
         light = Math.floor(light * 6) / 6;
         const n = noise(x * 0.18, gy * 0.18);
+        const n2 = noise2(x * 0.12, gy * 0.12);
         let rgb: number;
         if (elev >= SNOW_LINE) {
-          rgb = n > 0.2 ? CLIFF_WARM_LIGHT : n > -0.2 ? 0x787078 : 0x585060;
+          // Snow-zone cliff: cool gray rock with occasional snow
+          if (n2 > 0.4 && cliffT < 0.3) rgb = SNOW_MID;
+          else if (n > 0.2) rgb = CLIFF_SNOW_LIGHT;
+          else if (n > -0.2) rgb = CLIFF_SNOW_MID;
+          else rgb = CLIFF_SNOW_DARK;
+        } else if (elev >= ROCK_LINE) {
+          // Rock zone: warm brown stone
+          if (n2 > 0.3) rgb = CLIFF_HOT;
+          else if (n > 0.1) rgb = CLIFF_LIGHT;
+          else if (n > -0.2) rgb = CLIFF_MID;
+          else rgb = CLIFF_DARK;
         } else {
-          rgb = n > 0.2 ? CLIFF_WARM_LIGHT : n > -0.2 ? CLIFF_WARM_MID : CLIFF_WARM_DARK;
+          // Lower elevation
+          if (n > 0.2) rgb = CLIFF_LIGHT;
+          else if (n > -0.2) rgb = CLIFF_MID;
+          else rgb = CLIFF_DARK;
         }
-        pixels[gy * N + x] = applyBrightness(rgb, light);
+        pixels[gidx] = applyBrightness(rgb, light);
       } else {
         // Small gap or top portion: darken the surface color
-        const darken = 1.0 - t * 0.35;
-        pixels[gy * N + x] = packABGR(
+        const darken = 1.0 - t * 0.4;
+        pixels[gidx] = packABGR(
           Math.max(0, Math.floor(sr * darken)),
           Math.max(0, Math.floor(sg * darken)),
           Math.max(0, Math.floor(sb * darken)),

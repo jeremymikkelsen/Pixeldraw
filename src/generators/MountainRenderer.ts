@@ -20,7 +20,7 @@ function getSnowLine(season: Season): number {
   switch (season) {
     case Season.Winter: return 0.38;  // snow much lower
     case Season.Spring: return 0.52;  // snow retreating
-    case Season.Fall:   return 0.68;  // less snow than summer — late dry season
+    case Season.Fall:   return 0.80;  // minimal snow — late dry season
     default:            return SNOW_LINE_DEFAULT;
   }
 }

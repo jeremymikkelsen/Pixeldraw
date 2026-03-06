@@ -29,13 +29,13 @@ const PALETTES_SPRING: Record<TerrainType, TerrainPalette> = {
   cliff:    { base: [0x706050, 0x887868, 0xa09080, 0xb0a090, 0xc0b0a0], detailFreq: 0.22, detailAmp: 0.9 },
 };
 
-// Fall: warm oranges, reds, golden yellows
+// Fall: same green ground as summer — seasonal change is in the trees, not the grass
 const PALETTES_FALL: Record<TerrainType, TerrainPalette> = {
-  ocean:    { base: [0x1a2c48, 0x203858, 0x284466, 0x305074, 0x385c80], detailFreq: 0.06, detailAmp: 0.7 },
-  water:    { base: [0x2a5878, 0x306e90, 0x3880a8, 0x4890b8, 0x58a0c4], detailFreq: 0.08, detailAmp: 0.8 },
-  coast:    { base: [0x6a7830, 0x7a8838, 0x8a9840, 0x98a448, 0xa8b050], detailFreq: 0.15, detailAmp: 0.6 },
-  lowland:  { base: [0x5a6020, 0x6a7028, 0x7a7c30, 0x8a8a38, 0x989440], detailFreq: 0.18, detailAmp: 0.7 },
-  highland: { base: [0x4a5018, 0x585c20, 0x646828, 0x707430, 0x7c8038], detailFreq: 0.14, detailAmp: 0.6 },
+  ocean:    { base: [0x1a2e4a, 0x223d5e, 0x2a4a6b, 0x325878, 0x3a6585], detailFreq: 0.06, detailAmp: 0.7 },
+  water:    { base: [0x2a5c80, 0x347a9e, 0x3a8cb5, 0x4a9cc5, 0x5aaccc], detailFreq: 0.08, detailAmp: 0.8 },
+  coast:    { base: [0x5a8840, 0x6a9c50, 0x7aac6a, 0x8abc70, 0x9acc80], detailFreq: 0.15, detailAmp: 0.6 },
+  lowland:  { base: [0x356828, 0x3e7c30, 0x4a8c40, 0x58a048, 0x65ac55], detailFreq: 0.18, detailAmp: 0.7 },
+  highland: { base: [0x2a5420, 0x336428, 0x3a6c30, 0x447a38, 0x4e8840], detailFreq: 0.14, detailAmp: 0.6 },
   rock:     { base: [0x605848, 0x706858, 0x8c8070, 0x9c9080, 0xaca090], detailFreq: 0.20, detailAmp: 0.9 },
   cliff:    { base: [0x706050, 0x887868, 0xa09080, 0xb0a090, 0xc0b0a0], detailFreq: 0.22, detailAmp: 0.9 },
 };

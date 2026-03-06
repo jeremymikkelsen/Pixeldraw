@@ -241,6 +241,17 @@ export class RiverAnimator {
 
       let color = CALM_COLORS[rp.widthTier][shadeIdx];
 
+      // River sparkles: scattered glints across all calm water
+      if (!isRapids) {
+        const sparklePhase = rp.phase * 0.3 + timeSec * 1.2;
+        const jitter = fastHash(rp.idx) & 0xff;
+        const glint = Math.sin(sparklePhase + jitter * 0.04) *
+                      Math.sin(sparklePhase * 0.7 + jitter * 0.02);
+        if (glint > 0.7) {
+          color = glint > 0.85 ? FOAM_BRIGHT : FOAM_COLOR;
+        }
+      }
+
       // Rapids/waterfall foam
       if (isRapids) {
         const intensity = Math.min(1,

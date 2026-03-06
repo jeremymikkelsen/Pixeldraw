@@ -56,6 +56,10 @@ const SNOW_HIGHLIGHT = 0xf0f8ff;
 // MountainRenderer (full-map terrain extrusion)
 // ---------------------------------------------------------------------------
 export class MountainRenderer {
+  // Extrusion displacement map: for each source pixel index, the vertical
+  // offset (in pixels) it was shifted upward. Used by MapScene to displace
+  // the hover highlight to match the extruded terrain.
+  extrusionMap: Int16Array | null = null;
 
   render(
     pixels: Uint32Array,
@@ -107,7 +111,7 @@ export class MountainRenderer {
       }
     }
 
-    // Apply full-map terrain extrusion
+    // Apply full-map terrain extrusion (also builds extrusionMap)
     this._extrudeTerrain(pixels, elevGrid, N, noise, noise2);
   }
 
@@ -156,9 +160,18 @@ export class MountainRenderer {
       }
     }
 
-    // Snapshot source pixels (includes snow). The output buffer starts
-    // as a copy — uncovered positions keep their original appearance.
+    // Snapshot source pixels (includes snow), then clear the output buffer.
+    // Clearing prevents ghost images (e.g. double rivers) at original positions.
     const srcPixels = new Uint32Array(pixels);
+    pixels.fill(0);
+
+    // Build extrusion map: for each source index, how many pixels upward
+    const extMap = new Int16Array(N * N);
+    for (let i = 0; i < N * N; i++) {
+      const e = smoothElev[i];
+      extMap[i] = Math.floor(e * e * MAX_EXTRUSION);
+    }
+    this.extrusionMap = extMap;
 
     // Process each column BACK to FRONT (north y=0 → south y=N-1).
     // Every tile is always drawn at its displaced position.
@@ -170,7 +183,7 @@ export class MountainRenderer {
 
       for (let y = 0; y < N; y++) {
         const elev = smoothElev[y * N + x];
-        const extrusion = Math.floor(elev * elev * MAX_EXTRUSION);
+        const extrusion = extMap[y * N + x];
         const screenY = y - extrusion;
 
         // Slope for directional lighting

@@ -35,6 +35,7 @@ export class MapScene extends Phaser.Scene {
   private _regionGrid!: Uint16Array | null;
   private _hoveredRegion = -1;
   private _highlightIndices: number[] = [];
+  private _extrusionMap: Int16Array | null = null;
 
   // Debug overlays
   private _moistureOverlay!: Uint32Array | null;
@@ -247,9 +248,21 @@ export class MapScene extends Phaser.Scene {
       this._highlightIndices = [];
       if (region >= 0) {
         const grid = this._regionGrid;
-        const total = PIXEL_RESOLUTION * PIXEL_RESOLUTION;
+        const N = PIXEL_RESOLUTION;
+        const total = N * N;
+        const ext = this._extrusionMap;
         for (let i = 0; i < total; i++) {
-          if (grid[i] === region) this._highlightIndices.push(i);
+          if (grid[i] !== region) continue;
+          if (ext) {
+            // Map source pixel to extruded screen position
+            const sx = i % N;
+            const sy = ((i - sx) / N) - ext[i];
+            if (sy >= 0 && sy < N) {
+              this._highlightIndices.push(sy * N + sx);
+            }
+          } else {
+            this._highlightIndices.push(i);
+          }
         }
       }
     }
@@ -358,9 +371,10 @@ export class MapScene extends Phaser.Scene {
     const treeRenderer = new TreeRenderer();
     const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
 
-    // Rocky crags and mountain peaks (after trees so peaks overlay trees)
+    // Terrain extrusion (faux-3D) — after trees so peaks overlay trees
     const mountainRenderer = new MountainRenderer();
     mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed);
+    this._extrusionMap = mountainRenderer.extrusionMap;
 
     // River animator pre-computes pixel positions; skips tree-covered pixels
     const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask);

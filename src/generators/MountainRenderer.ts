@@ -195,10 +195,11 @@ export class MountainRenderer {
         const n2 = noise(px * 0.08, py * 0.08);
         if (this._season === Season.Winter) {
           // Winter: snow covers everything above rock line (which is 0)
-          // Use snow palette instead of brown rock
-          const snowVal = 0.6 + n * 0.2;
-          if (snowVal > 0.75) pixels[i] = packSnow(SNOW_MID);
-          else if (snowVal > 0.55) pixels[i] = packSnow(SNOW_SHADOW);
+          // Use full snow palette matching the snow zone and GroundRenderer
+          const snowVal = 0.7 + n * 0.2;
+          if (snowVal > 0.85) pixels[i] = packSnow(SNOW_HIGHLIGHT);
+          else if (snowVal > 0.7) pixels[i] = packSnow(SNOW_BRIGHT);
+          else if (snowVal > 0.55) pixels[i] = packSnow(SNOW_MID);
           else pixels[i] = packSnow(SNOW_SHADOW);
         } else {
           // Mix snow patches into upper rock zone

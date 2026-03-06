@@ -185,19 +185,18 @@ export class GroundRenderer {
           // Very selective: only ~3-5% of land shows through as grass
           const greenPatch = (patchNoise > 0.7) && (edgeNoise > 0.4);
           if (!greenPatch) {
-            // Blue-tinted snow matching mountain snow palette
-            // Use detail noise for snow shade variation (independent of patch noise)
+            // Snow palette matching MountainRenderer exactly
             const snowNoise = detailNoise(wx * 0.03, wy * 0.03);
             const snowT = (snowNoise + 1) / 2; // 0..1
-            let sr: number, sg: number, sb: number;
-            if (snowT > 0.7) {
-              sr = 0xe0; sg = 0xec; sb = 0xf4; // SNOW_BRIGHT
-            } else if (snowT > 0.4) {
-              sr = 0xc8; sg = 0xd8; sb = 0xe8; // SNOW_MID
+            if (snowT > 0.75) {
+              baseRGB = 0xf0f8ff; // SNOW_HIGHLIGHT
+            } else if (snowT > 0.5) {
+              baseRGB = 0xe0ecf4; // SNOW_BRIGHT
+            } else if (snowT > 0.25) {
+              baseRGB = 0xc8d8e8; // SNOW_MID
             } else {
-              sr = 0xb0; sg = 0xc0; sb = 0xd4; // between SHADOW and MID
+              baseRGB = 0xa0b8d0; // SNOW_SHADOW
             }
-            baseRGB = (sr << 16) | (sg << 8) | sb;
           }
         }
 
@@ -206,8 +205,8 @@ export class GroundRenderer {
         const dot = slopeX[i] * LIGHT_DIR_X + slopeY[i] * LIGHT_DIR_Y;
         let lightFactor = LIGHT_BASE + dot * LIGHT_STRENGTH;
         if (season === Season.Winter && terrain !== 'ocean' && terrain !== 'water') {
-          // Moderate shading on snow — enough to show terrain shape but not go dark
-          lightFactor = 0.82 + (lightFactor - LIGHT_BASE) * 0.35;
+          // Gentle shading on snow — keep it bright, matching highland snow
+          lightFactor = 0.88 + (lightFactor - LIGHT_BASE) * 0.25;
         }
         lightFactor = Math.max(0.35, Math.min(1.0, lightFactor));
         // Quantize for pixel-art stepped shading

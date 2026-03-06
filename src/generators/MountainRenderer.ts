@@ -169,11 +169,13 @@ export class MountainRenderer {
       }
     }
 
-    // Pre-paint snow and rock onto buffer — but SKIP tree pixels and ocean/water
-    const LAND_THRESHOLD = 0.08; // match water/coast boundary from terrain classification
+    // Pre-paint snow and rock onto buffer — but SKIP tree pixels and ocean/water/coast
+    // In winter, skip coast-level terrain (0.08-0.12) so beaches stay sandy
+    // and CoastalRenderer's beach paint isn't overwritten with snow.
+    const LAND_THRESHOLD = this._season === Season.Winter ? 0.12 : 0.08;
     for (let i = 0; i < N * N; i++) {
       const elev = smoothElev[i];
-      // Don't paint over trees or ocean/water
+      // Don't paint over trees or low-elevation terrain
       if (treeMask && treeMask[i]) continue;
       if (elev < LAND_THRESHOLD) continue;
 

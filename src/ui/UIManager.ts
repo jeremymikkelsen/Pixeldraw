@@ -7,7 +7,6 @@
 
 import { GameState, advanceTurn } from '../state/GameState';
 import { seasonName } from '../state/Season';
-import { TerrainType } from '../generators/TopographyGenerator';
 
 export class UIManager {
   private _state: GameState | null = null;
@@ -83,13 +82,15 @@ export class UIManager {
 
     if (duchyIdx >= 0) {
       const duchy = state.duchies[duchyIdx];
-      const colorHex = '#' + duchy.color.toString(16).padStart(6, '0');
+      const house = duchy.house;
+      const colorHex = '#' + house.color.toString(16).padStart(6, '0');
       html += `<div style="margin-top:6px">`;
       html += `<span style="display:inline-block;width:10px;height:10px;background:${colorHex};margin-right:6px;vertical-align:middle;border:1px solid #fff"></span>`;
-      html += `<strong>${duchy.name}</strong>`;
+      html += `<strong>${house.sigil} ${house.name}</strong>`;
       if (region === duchy.capitalRegion) html += ' (Capital)';
       html += `</div>`;
-      html += `<div style="font-size:12px;color:#aaa">Regions: ${duchy.regions.length} · River: ${duchy.hasRiver ? 'Yes' : 'No'} · Forest: ${duchy.hasForest ? 'Yes' : 'No'}</div>`;
+      html += `<div style="font-size:12px;color:#ccc">${house.rulerName} ${house.epithet} · ${house.axis}</div>`;
+      html += `<div style="font-size:11px;color:#999;margin-top:2px">${house.description}</div>`;
     } else {
       html += `<div style="margin-top:6px;color:#888">Unclaimed wilderness</div>`;
     }

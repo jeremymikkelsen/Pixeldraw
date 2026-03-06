@@ -12,7 +12,7 @@
 import { TopographyGenerator, TerrainType, mulberry32 } from '../generators/TopographyGenerator';
 import { HydrologyGenerator } from '../generators/HydrologyGenerator';
 import { buildAdjacencyList } from '../utils/adjacency';
-import { Duchy, DUCHY_COLORS, DUCHY_NAMES } from './Duchy';
+import { Duchy, HOUSES } from './Duchy';
 
 const NUM_DUCHIES = 9;
 const REGIONS_PER_DUCHY = 10;
@@ -196,8 +196,7 @@ export function generateDuchies(
 
     duchies.push({
       id: d,
-      name: DUCHY_NAMES[d],
-      color: DUCHY_COLORS[d],
+      house: HOUSES[d],
       regions,
       capitalRegion: seeds[d],
       hasRiver: duchyHasRiver,

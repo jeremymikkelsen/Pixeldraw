@@ -377,7 +377,7 @@ export class MapScene extends Phaser.Scene {
       seed,
       regions: topo.mesh.numRegions,
       rivers: hydro.rivers.length,
-      duchies: duchies.map(d => `${d.name} (${d.regions.length} regions)`),
+      duchies: duchies.map(d => `${d.house.name} (${d.regions.length} regions)`),
     });
 
     // --- Render map ---

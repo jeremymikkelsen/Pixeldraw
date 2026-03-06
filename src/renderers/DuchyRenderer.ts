@@ -37,7 +37,7 @@ export function renderDuchies(
   const duchyG = new Uint8Array(duchies.length);
   const duchyB = new Uint8Array(duchies.length);
   for (let d = 0; d < duchies.length; d++) {
-    const c = duchies[d].color;
+    const c = duchies[d].house.color;
     duchyR[d] = (c >> 16) & 0xff;
     duchyG[d] = (c >> 8) & 0xff;
     duchyB[d] = c & 0xff;

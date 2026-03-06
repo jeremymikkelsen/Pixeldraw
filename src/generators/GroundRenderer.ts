@@ -178,15 +178,17 @@ export class GroundRenderer {
 
         // 3. Winter snow coverage on land — blanket coverage with sparse green patches
         if (season === Season.Winter && terrain !== 'ocean' && terrain !== 'water') {
-          // Low-frequency noise for large coherent grass patches
-          const patchNoise = detailNoise(wx * 0.008, wy * 0.008);
-          // Medium frequency to break up patch edges
-          const edgeNoise = detailNoise(wx * 0.025, wy * 0.025);
-          // Combined: only show grass where both align (large blob + soft edge)
-          const greenPatch = (patchNoise > 0.55) && (edgeNoise > 0.2);
+          // Mid-frequency noise for moderate-sized grass patches
+          const patchNoise = detailNoise(wx * 0.02, wy * 0.02);
+          // Higher frequency to add organic edges
+          const edgeNoise = detailNoise(wx * 0.06, wy * 0.06);
+          // Very selective: only ~3-5% of land shows through as grass
+          const greenPatch = (patchNoise > 0.7) && (edgeNoise > 0.4);
           if (!greenPatch) {
             // Blue-tinted snow matching mountain snow palette
-            const snowT = (patchNoise + 1) / 2; // 0..1
+            // Use detail noise for snow shade variation (independent of patch noise)
+            const snowNoise = detailNoise(wx * 0.03, wy * 0.03);
+            const snowT = (snowNoise + 1) / 2; // 0..1
             let sr: number, sg: number, sb: number;
             if (snowT > 0.7) {
               sr = 0xe0; sg = 0xec; sb = 0xf4; // SNOW_BRIGHT

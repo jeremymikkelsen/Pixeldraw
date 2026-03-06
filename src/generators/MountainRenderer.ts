@@ -234,6 +234,15 @@ export class MountainRenderer {
         horizon = Math.min(horizon, drawFrom);
       }
     }
+
+    // Any pixel still showing background fill is an occluded back-slope
+    // (hidden behind a ridge from the viewing angle). Fall back to the
+    // original flat-rendered pixel so there are no dark voids.
+    for (let i = 0; i < N * N; i++) {
+      if (pixels[i] === BG_FILL) {
+        pixels[i] = srcPixels[i];
+      }
+    }
   }
 
   // -----------------------------------------------------------------------

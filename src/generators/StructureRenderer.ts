@@ -1,9 +1,8 @@
 /**
  * StructureRenderer — places thatched-roof cottages on lowland/highland regions.
  *
- * Each duchy capital gets a larger manor; other eligible regions may get
- * small cottages based on density heuristics (moisture, elevation, proximity
- * to rivers).
+ * Each duchy capital gets a larger manor sized to fill its Voronoi cell;
+ * other eligible regions get small cottages based on density heuristics.
  *
  * Sprites use a 3/4 perspective with visible front face, right side wall,
  * and angled roof.  Shadows are projected to the right on the ground plane.
@@ -26,15 +25,14 @@ import type { Duchy } from '../state/Duchy';
 const LIGHT_DIR_X = -0.707;
 const LIGHT_DIR_Y = -0.707;
 const SHADOW_DARKEN = 0.50;
-const SHADOW_SKEW_X = 0.45;   // how far right shadow extends per pixel of height
-const SHADOW_SKEW_Y = 0.35;   // how much shadow compresses toward ground
+const SHADOW_SKEW_X = 0.45;
+const SHADOW_SKEW_Y = 0.35;
 const EDGE_MARGIN = 12;
 const RIVER_BUFFER = 8;
 const MIN_COTTAGE_SPACING = 28;
 const MAX_COTTAGE_SPACING = 50;
 const COTTAGE_DENSITY = 0.12;
 
-// Terrain suitability
 const MAX_BUILDING_ELEVATION = 0.38;
 const MIN_BUILDING_ELEVATION = 0.10;
 
@@ -49,87 +47,187 @@ const S = 4;  // stone foundation
 const N = 5;  // window
 const P = 6;  // porch / wooden platform
 const K = 7;  // chimney
-const E = 8;  // east/side wall (3/4 perspective depth)
+const E = 8;  // east/side wall (3/4 depth)
 const M = 9;  // smoke
 
 // ---------------------------------------------------------------------------
-// Sprite templates — 3/4 perspective
+// Sprite templates — 3/4 perspective (small cottages)
 // ---------------------------------------------------------------------------
 type SpriteTemplate = { w: number; h: number; data: number[]; anchorY: number };
 
-// Small cottage 3/4 (11×12)
+// Small cottage 3/4 (9×9)
 const COTTAGE_SMALL: SpriteTemplate = {
-  w: 11, h: 12, anchorY: 11, data: [
-    _, _, _, _, M, _, _, _, _, _, _,
-    _, _, _, K, M, _, _, _, _, _, _,
-    _, _, R, R, R, R, R, _, _, _, _,
-    _, R, R, R, R, R, R, R, _, _, _,
-    _, R, R, R, R, R, R, R, R, _, _,
-    _, R, R, R, R, R, R, R, R, _, _,
-    _, W, W, N, W, W, E, E, E, _, _,
-    _, W, W, W, W, W, E, E, E, _, _,
-    _, W, W, D, W, W, E, E, E, _, _,
-    _, S, S, S, S, S, S, S, S, _, _,
-    _, _, P, P, P, P, P, P, _, _, _,
-    _, _, _, P, P, P, P, _, _, _, _,
+  w: 9, h: 9, anchorY: 8, data: [
+    _, _, _, K, M, _, _, _, _,
+    _, _, R, R, R, R, _, _, _,
+    _, R, R, R, R, R, R, _, _,
+    _, R, R, R, R, R, R, _, _,
+    _, W, W, N, W, E, E, _, _,
+    _, W, W, D, W, E, E, _, _,
+    _, S, S, S, S, S, S, _, _,
+    _, _, P, P, P, P, _, _, _,
+    _, _, _, P, P, _, _, _, _,
   ],
 };
 
-// Medium cottage 3/4 (13×14)
+// Medium cottage 3/4 (10×10)
 const COTTAGE_MEDIUM: SpriteTemplate = {
-  w: 13, h: 14, anchorY: 13, data: [
-    _, _, _, _, _, M, _, _, _, _, _, _, _,
-    _, _, _, _, K, M, _, _, _, _, _, _, _,
-    _, _, _, R, R, R, R, R, _, _, _, _, _,
-    _, _, R, R, R, R, R, R, R, _, _, _, _,
-    _, R, R, R, R, R, R, R, R, R, _, _, _,
-    _, R, R, R, R, R, R, R, R, R, R, _, _,
-    _, R, R, R, R, R, R, R, R, R, R, _, _,
-    _, W, W, N, W, N, W, W, E, E, E, _, _,
-    _, W, W, W, W, W, W, W, E, E, E, _, _,
-    _, W, W, W, D, W, W, W, E, E, E, _, _,
-    _, S, S, S, S, S, S, S, S, S, S, _, _,
-    _, _, P, P, P, P, P, P, P, P, _, _, _,
-    _, _, _, P, P, P, P, P, P, _, _, _, _,
-    _, _, _, _, P, P, P, P, _, _, _, _, _,
-  ],
-};
-
-// Manor house 3/4 (18×18)
-const MANOR: SpriteTemplate = {
-  w: 18, h: 18, anchorY: 17, data: [
-    _, _, _, _, _, _, _, _, _, _, M, _, _, _, _, _, _, _,
-    _, _, _, _, _, K, R, R, R, K, M, _, _, _, _, _, _, _,
-    _, _, _, _, R, R, R, R, R, R, R, R, _, _, _, _, _, _,
-    _, _, _, R, R, R, R, R, R, R, R, R, R, _, _, _, _, _,
-    _, _, R, R, R, R, R, R, R, R, R, R, R, R, _, _, _, _,
-    _, R, R, R, R, R, R, R, R, R, R, R, R, R, R, _, _, _,
-    _, R, R, R, R, R, R, R, R, R, R, R, R, R, R, R, _, _,
-    _, R, R, R, R, R, R, R, R, R, R, R, R, R, R, R, _, _,
-    _, W, W, N, W, W, N, W, W, N, W, W, E, E, E, E, _, _,
-    _, W, W, W, W, W, W, W, W, W, W, W, E, E, E, E, _, _,
-    _, W, W, W, W, W, W, W, W, W, W, W, E, E, E, E, _, _,
-    _, W, W, N, W, W, W, D, W, W, N, W, E, E, E, E, _, _,
-    _, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, _, _,
-    _, _, P, P, P, P, P, P, P, P, P, P, P, P, P, _, _, _,
-    _, _, _, P, P, P, P, P, P, P, P, P, P, P, _, _, _, _,
-    _, _, _, _, P, P, P, P, P, P, P, P, P, _, _, _, _, _,
-    _, _, _, _, _, P, P, P, P, P, P, P, _, _, _, _, _, _,
-    _, _, _, _, _, _, P, P, P, P, P, _, _, _, _, _, _, _,
+  w: 10, h: 10, anchorY: 9, data: [
+    _, _, _, K, M, _, _, _, _, _,
+    _, _, R, R, R, R, R, _, _, _,
+    _, R, R, R, R, R, R, R, _, _,
+    _, R, R, R, R, R, R, R, _, _,
+    _, W, W, N, W, W, E, E, _, _,
+    _, W, W, W, W, W, E, E, _, _,
+    _, W, W, D, W, W, E, E, _, _,
+    _, S, S, S, S, S, S, S, _, _,
+    _, _, P, P, P, P, P, _, _, _,
+    _, _, _, P, P, P, _, _, _, _,
   ],
 };
 
 const COTTAGE_TEMPLATES: SpriteTemplate[] = [COTTAGE_SMALL, COTTAGE_MEDIUM];
 
 // ---------------------------------------------------------------------------
-// Color palettes per cell type (RGB hex, 5 shades dark→light for directional lighting)
+// Procedural manor generation — fills a Voronoi cell
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a manor sprite template sized to fill its region cell.
+ * targetW / targetH come from the cell's pixel-space bounding box.
+ * rng provides variation in chimney placement and window layout.
+ */
+function generateManor(targetW: number, targetH: number, rng: () => number): SpriteTemplate {
+  // Clamp to reasonable bounds
+  const tw = Math.max(12, Math.min(40, targetW));
+  const th = Math.max(12, Math.min(40, targetH));
+
+  // Side wall depth (3/4 perspective)
+  const sideW = Math.max(2, Math.round(tw * 0.2));
+  // Front wall width (excluding side)
+  const frontW = tw - sideW - 2; // -2 for left/right margin
+  // Roof rows and wall rows
+  const wallRows = Math.max(3, Math.round(th * 0.22));
+  const roofRows = Math.max(3, Math.round(th * 0.35));
+  const foundationRows = 1;
+  const porchRows = Math.max(2, Math.round(th * 0.15));
+  const smokeRows = 2;
+
+  const totalH = smokeRows + roofRows + wallRows + foundationRows + porchRows;
+  const w = tw;
+  const data: number[] = new Array(w * totalH).fill(_);
+
+  const set = (row: number, col: number, val: number) => {
+    if (row >= 0 && row < totalH && col >= 0 && col < w) {
+      data[row * w + col] = val;
+    }
+  };
+
+  // Layout column ranges
+  const leftMargin = 1;
+  const frontLeft = leftMargin;
+  const frontRight = frontLeft + frontW - 1;
+  const sideLeft = frontRight + 1;
+  const sideRight = sideLeft + sideW - 1;
+
+  let row = 0;
+
+  // --- Chimney + smoke (2 rows) ---
+  // Place 1-2 chimneys with smoke
+  const chimney1X = frontLeft + Math.floor(frontW * 0.3) + Math.floor(rng() * 2);
+  const chimney2X = (frontW > 6) ? frontLeft + Math.floor(frontW * 0.7) + Math.floor(rng() * 2) : -1;
+  for (let sr = 0; sr < smokeRows; sr++) {
+    // Smoke above chimneys
+    if (sr === 0) {
+      set(row, chimney1X, M);
+      if (chimney2X > 0) set(row, chimney2X, M);
+    } else {
+      set(row, chimney1X, K);
+      set(row, chimney1X + 1, M);
+      if (chimney2X > 0) {
+        set(row, chimney2X, K);
+        set(row, chimney2X + 1, M);
+      }
+    }
+    row++;
+  }
+
+  // --- Roof (expanding trapezoid) ---
+  for (let rr = 0; rr < roofRows; rr++) {
+    const t = rr / (roofRows - 1); // 0 at peak, 1 at eave
+    // Roof expands from narrow peak to full width
+    const roofLeft = Math.round(frontLeft + (1 - t) * (frontW * 0.35));
+    const roofRight = Math.round(sideRight - (1 - t) * (sideW * 0.5));
+    for (let c = roofLeft; c <= roofRight; c++) {
+      set(row, c, R);
+    }
+    row++;
+  }
+
+  // --- Front wall + side wall ---
+  // Decide window positions
+  const windowSpacing = Math.max(2, Math.floor(frontW / 3));
+  const windowCols: number[] = [];
+  for (let c = frontLeft + 2; c <= frontRight - 1; c += windowSpacing) {
+    windowCols.push(c);
+  }
+  // Door position (center of front wall, bottom row of wall)
+  const doorCol = frontLeft + Math.floor(frontW / 2);
+
+  for (let wr = 0; wr < wallRows; wr++) {
+    // Front wall
+    for (let c = frontLeft; c <= frontRight; c++) {
+      if (wr === wallRows - 1 && c === doorCol) {
+        set(row, c, D);
+      } else if (wr < wallRows - 1 && windowCols.includes(c)) {
+        set(row, c, N);
+      } else {
+        set(row, c, W);
+      }
+    }
+    // Side wall
+    for (let c = sideLeft; c <= sideRight; c++) {
+      set(row, c, E);
+    }
+    row++;
+  }
+
+  // --- Stone foundation ---
+  for (let fr = 0; fr < foundationRows; fr++) {
+    for (let c = frontLeft; c <= sideRight; c++) {
+      set(row, c, S);
+    }
+    row++;
+  }
+
+  // --- Porch (tapering) ---
+  for (let pr = 0; pr < porchRows; pr++) {
+    const inset = pr;
+    const pLeft = frontLeft + inset;
+    const pRight = sideRight - inset;
+    if (pLeft > pRight) break;
+    for (let c = pLeft; c <= pRight; c++) {
+      set(row, c, P);
+    }
+    row++;
+  }
+
+  // Trim unused rows
+  const actualH = row;
+  const trimmed = data.slice(0, actualH * w);
+
+  return { w, h: actualH, data: trimmed, anchorY: actualH - 1 };
+}
+
+// ---------------------------------------------------------------------------
+// Color palettes
 // ---------------------------------------------------------------------------
 interface StructurePalette {
   wall: number[];     // 5 shades
   roof: number[];     // 5 shades
   stone: number[];    // 5 shades
-  door: number;       // single color
-  window: number;     // single color
+  door: number;
+  window: number;
   porch: number[];    // 3 shades
   chimney: number[];  // 3 shades
 }
@@ -170,7 +268,7 @@ function getPalette(season: Season): StructurePalette {
 }
 
 // ---------------------------------------------------------------------------
-// Structure instance (exported for MapScene split-phase rendering)
+// Structure instance
 // ---------------------------------------------------------------------------
 export interface StructureInstance {
   px: number;
@@ -187,7 +285,6 @@ export class StructureRenderer {
 
   /**
    * Phase 1: Place structures and build an exclusion mask (no pixel drawing).
-   * Call this BEFORE trees/mountains so they can avoid building footprints.
    */
   placeStructures(
     topo: TopographyGenerator,
@@ -203,9 +300,7 @@ export class StructureRenderer {
     const { points } = topo.mesh;
     const numRegions = topo.mesh.numRegions;
 
-    // ------------------------------------------------------------------
-    // 1. Spatial grid for nearest-region lookup
-    // ------------------------------------------------------------------
+    // Spatial grid for nearest-region lookup
     const cellSize = 80;
     const gridW = Math.ceil(topo.size / cellSize);
     const grid: number[][] = new Array(gridW * gridW);
@@ -217,13 +312,10 @@ export class StructureRenderer {
       if (gx >= 0 && gy >= 0) grid[gy * gridW + gx].push(r);
     }
 
-    // ------------------------------------------------------------------
-    // 2. Build river exclusion mask
-    // ------------------------------------------------------------------
     const riverMask = this._buildRiverMask(topo, hydro, res);
 
     // ------------------------------------------------------------------
-    // 3. Place capital manors at each duchy's capital region
+    // Capital manors — sized to fill their Voronoi cell
     // ------------------------------------------------------------------
     const structures: StructureInstance[] = [];
 
@@ -237,17 +329,39 @@ export class StructureRenderer {
       if (px < EDGE_MARGIN || py < EDGE_MARGIN ||
           px >= res - EDGE_MARGIN || py >= res - EDGE_MARGIN) continue;
 
+      // Get Voronoi cell polygon and compute bounding box in pixel space
+      const poly = topo.mesh.voronoiPolygon(cr);
+      if (poly.length < 3) continue;
+
+      let minPx = Infinity, maxPx = -Infinity;
+      let minPy = Infinity, maxPy = -Infinity;
+      for (const pt of poly) {
+        const cx = pt.x / scale;
+        const cy = pt.y / scale;
+        if (cx < minPx) minPx = cx;
+        if (cx > maxPx) maxPx = cx;
+        if (cy < minPy) minPy = cy;
+        if (cy > maxPy) maxPy = cy;
+      }
+
+      const cellW = Math.round(maxPx - minPx);
+      const cellH = Math.round(maxPy - minPy);
+
+      // Generate a unique manor for this cell
+      const manorRng = mulberry32(seed ^ (cr * 0x9E3779B9));
+      const template = generateManor(cellW, cellH, manorRng);
+
       structures.push({
         px,
         py,
-        template: MANOR,
+        template,
         flipped: false,
         isCapital: true,
       });
     }
 
     // ------------------------------------------------------------------
-    // 4. Poisson disk sampling for village cottages
+    // Poisson disk sampling for village cottages
     // ------------------------------------------------------------------
     const pds = new PoissonDiskSampling({
       shape: [res, res],
@@ -318,14 +432,8 @@ export class StructureRenderer {
       });
     }
 
-    // ------------------------------------------------------------------
-    // 5. Sort by Y for painter's algorithm
-    // ------------------------------------------------------------------
     structures.sort((a, b) => a.py - b.py);
 
-    // ------------------------------------------------------------------
-    // 6. Build structure mask (no pixel drawing)
-    // ------------------------------------------------------------------
     const mask = new Uint8Array(res * res);
     for (const s of structures) {
       this._fillMask(mask, res, s);
@@ -336,7 +444,6 @@ export class StructureRenderer {
 
   /**
    * Phase 2: Render shadows + sprites into pixels.
-   * Call this AFTER duchy borders so buildings draw on top.
    */
   renderSprites(
     pixels: Uint32Array,
@@ -346,19 +453,16 @@ export class StructureRenderer {
   ): void {
     const palette = getPalette(season);
 
-    // Shadow pass
     for (const s of structures) {
       this._stampShadow(pixels, resolution, s);
     }
-
-    // Sprite pass
     for (const s of structures) {
       this._stampSprite(pixels, resolution, s, palette);
     }
   }
 
   // -----------------------------------------------------------------------
-  // Fill mask without drawing (for tree/mountain exclusion)
+  // Fill mask without drawing
   // -----------------------------------------------------------------------
   private _fillMask(mask: Uint8Array, N: number, s: StructureInstance): void {
     const { px: tx, py: ty, template, flipped } = s;
@@ -370,7 +474,7 @@ export class StructureRenderer {
       for (let sx = 0; sx < w; sx++) {
         const srcX = flipped ? (w - 1 - sx) : sx;
         const cell = data[sy * w + srcX];
-        if (cell === 0 || cell === M) continue;  // skip transparent + smoke
+        if (cell === 0 || cell === M) continue;
 
         const px = startX + sx;
         const py = startY + sy;
@@ -449,7 +553,7 @@ export class StructureRenderer {
   }
 
   // -----------------------------------------------------------------------
-  // Shadow stamp — projected to the right on the ground plane (no float)
+  // Shadow stamp — projected to the right on the ground plane
   // -----------------------------------------------------------------------
   private _stampShadow(pixels: Uint32Array, N: number, s: StructureInstance): void {
     const { px: tx, py: ty, template } = s;
@@ -462,11 +566,7 @@ export class StructureRenderer {
         const cell = data[sy * w + sx];
         if (cell === 0 || cell === M) continue;
 
-        // Height of this pixel above the building's base
         const heightAboveBase = anchorY - sy;
-
-        // Shadow projects to the right proportional to height,
-        // and compresses vertically toward the ground
         const shadowDx = Math.round(heightAboveBase * SHADOW_SKEW_X) + 1;
         const shadowDy = Math.round(heightAboveBase * SHADOW_SKEW_Y);
 
@@ -494,7 +594,7 @@ export class StructureRenderer {
     const startX = tx - Math.floor(w / 2);
     const startY = ty - anchorY;
 
-    // Bounding box for roof (for directional lighting)
+    // Bounding box for roof (directional lighting)
     let roofMinX = w, roofMaxX = 0, roofMinY = h, roofMaxY = 0;
     for (let sy = 0; sy < h; sy++) {
       for (let sx = 0; sx < w; sx++) {
@@ -540,19 +640,16 @@ export class StructureRenderer {
         let color: number;
         switch (cell) {
           case W: {
-            // Front wall: directional shading left→right
             const t = sx / (w - 1);
             const shadeIdx = Math.max(0, Math.min(4, Math.floor(t * 4.99)));
             color = palette.wall[shadeIdx];
             break;
           }
           case E: {
-            // Side/east wall: uniformly darker (in shadow from 3/4 view)
             color = palette.wall[1];
             break;
           }
           case R: {
-            // Roof: directional lighting from NW
             const relX = (srcX - roofCX) / roofRadX;
             const relY = (sy - roofCY) / roofRadY;
             const lightDot = relX * LIGHT_DIR_X + relY * LIGHT_DIR_Y;
@@ -562,7 +659,6 @@ export class StructureRenderer {
             break;
           }
           case S: {
-            // Stone foundation
             const t = sx / (w - 1);
             const shadeIdx = Math.max(0, Math.min(4, Math.floor(t * 4.99)));
             color = palette.stone[shadeIdx];
@@ -575,13 +671,11 @@ export class StructureRenderer {
             color = palette.window;
             break;
           case P: {
-            // Porch planks
             const pi = Math.min(2, Math.floor((sx / (w - 1)) * 2.99));
             color = palette.porch[pi];
             break;
           }
           case K: {
-            // Chimney (brighter stone/brick)
             const ci = Math.min(2, Math.floor((sy / (h - 1)) * 2.99));
             color = palette.chimney[ci];
             break;

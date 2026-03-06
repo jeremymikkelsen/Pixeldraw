@@ -141,9 +141,7 @@ export class MountainRenderer {
       }
     }
 
-    // Pre-paint snow onto the buffer for high-elevation pixels.
-    // This ensures back-slopes (occluded by extrusion) still show snow
-    // when we fall back to the source image.
+    // Pre-paint snow onto the buffer for high-elevation pixels
     for (let i = 0; i < N * N; i++) {
       if (smoothElev[i] >= SNOW_LINE) {
         const px = i % N, py = (i - px) / N;
@@ -158,106 +156,79 @@ export class MountainRenderer {
       }
     }
 
-    // Snapshot the current pixel buffer (now includes snow on peaks)
+    // Snapshot source pixels (includes snow). The output buffer starts
+    // as a copy — uncovered positions keep their original appearance.
     const srcPixels = new Uint32Array(pixels);
 
-    // Track which output pixels have been written by the extrusion pass.
-    // Avoids the signed/unsigned comparison bug with sentinel colors.
-    const drawn = new Uint8Array(N * N);
-
-    // Process each column independently
+    // Process each column BACK to FRONT (north y=0 → south y=N-1).
+    // Every tile is always drawn at its displaced position.
+    // Southern (front) rows overwrite northern (back) rows.
+    // Cliff faces fill vertical gaps between consecutive rows.
     for (let x = 0; x < N; x++) {
-      let horizon = N; // nothing drawn yet
+      let prevScreenY = -1;
+      let prevElev = 0;
 
-      // Scan FRONT to BACK: south (y=N-1) → north (y=0)
-      for (let y = N - 1; y >= 0; y--) {
+      for (let y = 0; y < N; y++) {
         const elev = smoothElev[y * N + x];
-
-        // Extrusion height: t² curve (ocean barely rises, peaks dramatic)
         const extrusion = Math.floor(elev * elev * MAX_EXTRUSION);
-        if (extrusion < MIN_EXTRUSION) {
-          // No extrusion — pixel stays at its original position
-          drawn[y * N + x] = 1;
-          continue;
-        }
-
-        // Screen position of the extruded top
-        const screenTop = y - extrusion;
-
-        // Only draw what peeks above current horizon
-        if (screenTop >= horizon) continue;
-
-        const drawFrom = Math.max(0, screenTop);
-        const drawTo = Math.min(N - 1, horizon - 1);
+        const screenY = y - extrusion;
 
         // Slope for directional lighting
         const eL = x > 0 ? smoothElev[y * N + x - 1] : elev;
         const eR = x < N - 1 ? smoothElev[y * N + x + 1] : elev;
         const eU = y > 0 ? smoothElev[(y - 1) * N + x] : elev;
         const eD = y < N - 1 ? smoothElev[(y + 1) * N + x] : elev;
-
-        // Scale slopes heavily (elevation deltas ~0.01 between neighbors)
         const slopeX = (eR - eL) * 80;
         const slopeY = (eD - eU) * 80;
         const lightDot = slopeX * -0.707 + slopeY * -0.707;
 
-        for (let sy = drawFrom; sy <= drawTo; sy++) {
-          const colT = extrusion > 0 ? (sy - screenTop) / extrusion : 0;
-          drawn[sy * N + x] = 1;
+        // Fill cliff face if there's a vertical gap (south-facing drop)
+        if (prevScreenY >= 0 && screenY > prevScreenY + 1) {
+          const gapTop = Math.max(0, prevScreenY + 1);
+          const gapBot = Math.min(N - 1, screenY - 1);
+          const gapHeight = Math.max(1, gapBot - gapTop + 1);
+          const cliffElev = Math.max(prevElev, elev);
 
-          // Surface pixels (top ~15%): preserve original rendered colors
-          // with slope-based brightness adjustment. Snow replaces surface
-          // colors above the snow line.
-          if (colT < 0.15) {
-            const surfaceLight = 0.7 + lightDot * 0.5;
-            const light = Math.max(0.5, Math.min(1.2, surfaceLight));
-
-            if (elev >= SNOW_LINE) {
-              // Snow surface: multi-shaded snow based on lighting + noise
-              const n = noise(x * 0.15, y * 0.15);
-              const snowLight = light + n * 0.15;
-              let snowRGB: number;
-              if (snowLight > 1.05) snowRGB = SNOW_HIGHLIGHT;
-              else if (snowLight > 0.85) snowRGB = SNOW_BRIGHT;
-              else if (snowLight > 0.65) snowRGB = SNOW_MID;
-              else snowRGB = SNOW_SHADOW;
-              pixels[sy * N + x] = snowRGB;
-            } else {
-              // Normal terrain: apply lighting to the original pixel color
-              const origPixel = srcPixels[y * N + x];
-              const r = (origPixel) & 0xff;
-              const g = (origPixel >> 8) & 0xff;
-              const b = (origPixel >> 16) & 0xff;
-              const lr = Math.min(255, Math.floor(r * light));
-              const lg = Math.min(255, Math.floor(g * light));
-              const lb = Math.min(255, Math.floor(b * light));
-              pixels[sy * N + x] = packABGR(lr, lg, lb);
-            }
-          } else {
-            // Cliff face: terrain-appropriate colors
-            // Light: bright at top, gradually darker toward base, never black
-            const cliffBase = 0.75 - colT * 0.2; // 0.75 at top → 0.55 at base
+          for (let sy = gapTop; sy <= gapBot; sy++) {
+            const colT = (sy - gapTop) / gapHeight;
+            const cliffBase = 0.75 - colT * 0.2;
             const lateralLight = lightDot * 0.25;
             let light = cliffBase + lateralLight;
             light = Math.max(0.5, Math.min(1.1, light));
-            // Quantize for pixel-art feel
             light = Math.floor(light * 6) / 6;
-
-            const rgb = this._cliffColor(elev, colT, light, x, sy, noise, noise2);
+            const rgb = this._cliffColor(cliffElev, colT, light, x, sy, noise, noise2);
             pixels[sy * N + x] = applyBrightness(rgb, light);
           }
         }
 
-        horizon = Math.min(horizon, drawFrom);
-      }
-    }
+        // Draw surface pixel at displaced position
+        if (screenY >= 0 && screenY < N) {
+          const surfaceLight = 0.7 + lightDot * 0.5;
+          const light = Math.max(0.5, Math.min(1.2, surfaceLight));
 
-    // Restore source pixels for any position not covered by the extrusion.
-    // This fills occluded back-slopes with the pre-painted source (including
-    // snow). Source pixels already include the snow we painted above.
-    for (let i = 0; i < N * N; i++) {
-      if (!drawn[i]) {
-        pixels[i] = srcPixels[i];
+          if (elev >= SNOW_LINE) {
+            const n = noise(x * 0.15, y * 0.15);
+            const snowLight = light + n * 0.15;
+            let snowRGB: number;
+            if (snowLight > 1.05) snowRGB = SNOW_HIGHLIGHT;
+            else if (snowLight > 0.85) snowRGB = SNOW_BRIGHT;
+            else if (snowLight > 0.65) snowRGB = SNOW_MID;
+            else snowRGB = SNOW_SHADOW;
+            pixels[screenY * N + x] = snowRGB;
+          } else {
+            const origPixel = srcPixels[y * N + x];
+            const r = (origPixel) & 0xff;
+            const g = (origPixel >> 8) & 0xff;
+            const b = (origPixel >> 16) & 0xff;
+            const lr = Math.min(255, Math.floor(r * light));
+            const lg = Math.min(255, Math.floor(g * light));
+            const lb = Math.min(255, Math.floor(b * light));
+            pixels[screenY * N + x] = packABGR(lr, lg, lb);
+          }
+        }
+
+        prevScreenY = screenY;
+        prevElev = elev;
       }
     }
   }

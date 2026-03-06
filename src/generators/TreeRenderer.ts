@@ -2,6 +2,7 @@ import PoissonDiskSampling from 'fast-2d-poisson-disk-sampling';
 import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
 import { HydrologyGenerator } from './HydrologyGenerator';
 import { packABGR } from './TerrainPalettes';
+import { Season } from '../state/Season';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -208,31 +209,84 @@ interface TreePalette {
   trunk: number[];    // 2 shades: light (left), dark (right)
 }
 
-const DECIDUOUS_PALETTES: TreePalette[] = [
-  { // Standard green
-    canopy: [0x1f4a22, 0x2d6630, 0x3a8040, 0x50a048, 0x68b850],
-    trunk:  [0x8a7860, 0x5a4a38],
-  },
-  { // Yellow-green
-    canopy: [0x2a5028, 0x387038, 0x4a8c48, 0x60a458, 0x78bc60],
-    trunk:  [0x907c62, 0x604e3c],
-  },
-  { // Dark emerald
-    canopy: [0x1a4028, 0x285a30, 0x347040, 0x44884a, 0x58a058],
-    trunk:  [0x887060, 0x584838],
-  },
+// --- Summer (default) deciduous palettes ---
+const DECIDUOUS_PALETTES_SUMMER: TreePalette[] = [
+  { canopy: [0x1f4a22, 0x2d6630, 0x3a8040, 0x50a048, 0x68b850], trunk: [0x8a7860, 0x5a4a38] },
+  { canopy: [0x2a5028, 0x387038, 0x4a8c48, 0x60a458, 0x78bc60], trunk: [0x907c62, 0x604e3c] },
+  { canopy: [0x1a4028, 0x285a30, 0x347040, 0x44884a, 0x58a058], trunk: [0x887060, 0x584838] },
 ];
 
-const CONIFER_PALETTES: TreePalette[] = [
-  { // Dark blue-green
-    canopy: [0x1a3822, 0x244a2a, 0x2e5c32, 0x3a6e3a, 0x4a8044],
-    trunk:  [0x6a5840, 0x4a3828],
-  },
-  { // Forest green
-    canopy: [0x1c3c20, 0x264e2a, 0x306034, 0x3c723e, 0x4c8648],
-    trunk:  [0x705c44, 0x4c3c2a],
-  },
+// --- Spring: bright fresh greens, ~15% of trees get pink blossoms ---
+const DECIDUOUS_PALETTES_SPRING: TreePalette[] = [
+  { canopy: [0x2a6028, 0x3a7c38, 0x4c9848, 0x60b058, 0x78c868], trunk: [0x8a7860, 0x5a4a38] },
+  { canopy: [0x306830, 0x408840, 0x52a050, 0x68b860, 0x80cc70], trunk: [0x907c62, 0x604e3c] },
+  { canopy: [0x245828, 0x347030, 0x448840, 0x58a04c, 0x6cb85c], trunk: [0x887060, 0x584838] },
 ];
+// Blossom palette: pink/white flowers
+const DECIDUOUS_PALETTES_BLOSSOM: TreePalette[] = [
+  { canopy: [0xc07090, 0xd088a0, 0xe0a0b8, 0xecb8cc, 0xf4d0e0], trunk: [0x8a7860, 0x5a4a38] },
+  { canopy: [0xb86888, 0xcc80a0, 0xdc98b4, 0xe8b0c8, 0xf0c8d8], trunk: [0x907c62, 0x604e3c] },
+];
+
+// --- Fall: oranges, reds, golden yellows ---
+const DECIDUOUS_PALETTES_FALL: TreePalette[] = [
+  { canopy: [0x8a3818, 0xa04820, 0xb86028, 0xcc7830, 0xe09038], trunk: [0x8a7860, 0x5a4a38] },
+  { canopy: [0x904420, 0xa85828, 0xc07030, 0xd48838, 0xe8a040], trunk: [0x907c62, 0x604e3c] },
+  { canopy: [0x7a3020, 0x943828, 0xac4430, 0xc05038, 0xd46040], trunk: [0x887060, 0x584838] },
+  { canopy: [0x886020, 0xa07828, 0xb89030, 0xc8a438, 0xd8b840], trunk: [0x8a7860, 0x5a4a38] },
+];
+
+// --- Winter: bare branches (trunk-colored, very sparse canopy) ---
+const DECIDUOUS_PALETTES_WINTER: TreePalette[] = [
+  { canopy: [0x5a4838, 0x6a5848, 0x7a6858, 0x887868, 0x988878], trunk: [0x8a7860, 0x5a4a38] },
+  { canopy: [0x584638, 0x685648, 0x786658, 0x867668, 0x968678], trunk: [0x907c62, 0x604e3c] },
+];
+
+// --- Conifer palettes per season ---
+const CONIFER_PALETTES_SUMMER: TreePalette[] = [
+  { canopy: [0x1a3822, 0x244a2a, 0x2e5c32, 0x3a6e3a, 0x4a8044], trunk: [0x6a5840, 0x4a3828] },
+  { canopy: [0x1c3c20, 0x264e2a, 0x306034, 0x3c723e, 0x4c8648], trunk: [0x705c44, 0x4c3c2a] },
+];
+
+const CONIFER_PALETTES_SPRING: TreePalette[] = [
+  { canopy: [0x1e4024, 0x28542e, 0x326838, 0x3e7c42, 0x50904c], trunk: [0x6a5840, 0x4a3828] },
+  { canopy: [0x204428, 0x2a5830, 0x346c3a, 0x408044, 0x52944e], trunk: [0x705c44, 0x4c3c2a] },
+];
+
+const CONIFER_PALETTES_FALL: TreePalette[] = [
+  { canopy: [0x1a3822, 0x244a2a, 0x2e5c32, 0x3a6e3a, 0x4a8044], trunk: [0x6a5840, 0x4a3828] },
+  { canopy: [0x1c3c20, 0x264e2a, 0x306034, 0x3c723e, 0x4c8648], trunk: [0x705c44, 0x4c3c2a] },
+];
+
+// Winter conifers: snow-dusted, lighter tips
+const CONIFER_PALETTES_WINTER: TreePalette[] = [
+  { canopy: [0x1a3822, 0x2a4a30, 0x3a6040, 0x90b0a0, 0xc8dcd0], trunk: [0x6a5840, 0x4a3828] },
+  { canopy: [0x1c3c20, 0x2c502e, 0x3c6438, 0x88a898, 0xc0d4c8], trunk: [0x705c44, 0x4c3c2a] },
+];
+
+function getDeciduousPalettes(season: Season, rng: () => number): TreePalette[] {
+  switch (season) {
+    case Season.Spring:
+      // 15% chance of blossom palette
+      return rng() < 0.15 ? DECIDUOUS_PALETTES_BLOSSOM : DECIDUOUS_PALETTES_SPRING;
+    case Season.Fall:   return DECIDUOUS_PALETTES_FALL;
+    case Season.Winter: return DECIDUOUS_PALETTES_WINTER;
+    default:            return DECIDUOUS_PALETTES_SUMMER;
+  }
+}
+
+function getConiferPalettes(season: Season): TreePalette[] {
+  switch (season) {
+    case Season.Spring: return CONIFER_PALETTES_SPRING;
+    case Season.Fall:   return CONIFER_PALETTES_FALL;
+    case Season.Winter: return CONIFER_PALETTES_WINTER;
+    default:            return CONIFER_PALETTES_SUMMER;
+  }
+}
+
+// Legacy aliases for backward compatibility
+const DECIDUOUS_PALETTES = DECIDUOUS_PALETTES_SUMMER;
+const CONIFER_PALETTES = CONIFER_PALETTES_SUMMER;
 
 // ---------------------------------------------------------------------------
 // Tree instance
@@ -243,6 +297,8 @@ interface TreeInstance {
   template: SpriteTemplate;
   palette: TreePalette;
   flipped: boolean;
+  isConifer: boolean;
+  season: Season;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +312,7 @@ export class TreeRenderer {
     hydro: HydrologyGenerator,
     resolution: number,
     seed: number,
+    season: Season = Season.Summer,
   ): Uint8Array {
     const rng = mulberry32(seed ^ 0x7ee0000);
     const N = resolution;
@@ -378,7 +435,7 @@ export class TreeRenderer {
 
       // Pick size based on moisture (wetter = bigger)
       const templates = isConifer ? CONIFER_TEMPLATES : DECIDUOUS_TEMPLATES;
-      const palettes = isConifer ? CONIFER_PALETTES : DECIDUOUS_PALETTES;
+      const palettes = isConifer ? getConiferPalettes(season) : getDeciduousPalettes(season, rng);
       const sizeRoll = rng() + moisture * 0.3;
       let templateIdx: number;
       if (sizeRoll > 1.0) {
@@ -399,6 +456,8 @@ export class TreeRenderer {
         template: templates[templateIdx],
         palette: palettes[Math.floor(rng() * palettes.length)],
         flipped: false,
+        isConifer,
+        season,
       });
     }
 
@@ -527,7 +586,9 @@ export class TreeRenderer {
   // Stamp tree sprite with directional lighting
   // -----------------------------------------------------------------------
   private _stampSprite(pixels: Uint32Array, N: number, tree: TreeInstance, treeMask?: Uint8Array): void {
-    const { px: tx, py: ty, template, palette, flipped } = tree;
+    const { px: tx, py: ty, template, palette, flipped, isConifer, season } = tree;
+    // Winter deciduous: only draw ~30% of canopy pixels (bare branches)
+    const isBareSeason = season === Season.Winter && !isConifer;
     const { w, h, data } = template;
 
     // Tree position: trunk base at (tx, ty), sprite extends upward
@@ -560,6 +621,13 @@ export class TreeRenderer {
         const px = startX + sx;
         const py = startY + sy;
         if (px < 0 || px >= N || py < 0 || py >= N) continue;
+
+        // Winter deciduous: skip most canopy pixels for bare-branch look
+        if (isBareSeason && cell === C) {
+          // Keep pixels near the vertical center (trunk line) as branches
+          const distFromCenter = Math.abs(srcX - Math.floor(w / 2));
+          if (distFromCenter > 1 || ((tx + sy * 7) & 3) !== 0) continue;
+        }
 
         let color: number;
         if (cell === T) {

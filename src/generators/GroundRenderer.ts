@@ -1,7 +1,8 @@
 import { createNoise2D } from 'simplex-noise';
 import { TopographyGenerator, TerrainType, mulberry32, MAP_SCALE } from './TopographyGenerator';
 import { HydrologyGenerator } from './HydrologyGenerator';
-import { PALETTES, applyBrightness, packABGR } from './TerrainPalettes';
+import { getPalettes, applyBrightness, packABGR } from './TerrainPalettes';
+import { Season } from '../state/Season';
 
 // Terrain type ↔ integer index for typed-array storage
 const TERRAIN_INDEX: Record<TerrainType, number> = {
@@ -21,7 +22,7 @@ const LIGHT_STEPS = 5;
 export class GroundRenderer {
   regionGrid: Uint16Array | null = null;
 
-  render(topo: TopographyGenerator, resolution: number, hydro?: HydrologyGenerator): Uint32Array {
+  render(topo: TopographyGenerator, resolution: number, hydro?: HydrologyGenerator, season: Season = Season.Summer): Uint32Array {
     const { size, seed, mesh, terrainType: regionTerrain } = topo;
     const { points } = mesh;
     const numRegions = mesh.numRegions;
@@ -137,12 +138,13 @@ export class GroundRenderer {
     // Phase 2: Pixel shader
     // ------------------------------------------------------------------
     const pixels = new Uint32Array(totalPixels);
+    const palettes = getPalettes(season);
 
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
         const terrain = INDEX_TERRAIN[terrainGrid[i]];
-        const palette = PALETTES[terrain];
+        const palette = palettes[terrain];
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
 
@@ -173,7 +175,26 @@ export class GroundRenderer {
           }
         }
 
-        // 3. Elevation shading (directional light from upper-left)
+        // 3. Winter snow coverage on land (elevation-dependent)
+        if (season === Season.Winter && terrain !== 'ocean' && terrain !== 'water') {
+          const elev = elevationGrid[i];
+          // Snow coverage: 100% above 0.35, gradient 0.15-0.35, sparse below
+          const snowChance = elev > 0.35 ? 1.0 : elev > 0.15 ? (elev - 0.15) / 0.20 : 0.15;
+          const dn2 = detailNoise(wx * 0.04, wy * 0.04);
+          if (dn2 * 0.5 + 0.5 < snowChance) {
+            // Blend toward snow white based on elevation
+            let r = (baseRGB >> 16) & 0xff;
+            let g = (baseRGB >> 8) & 0xff;
+            let b = baseRGB & 0xff;
+            const snowBlend = Math.min(1, snowChance * 0.7 + 0.2);
+            r = Math.floor(r + (0xe0 - r) * snowBlend);
+            g = Math.floor(g + (0xe8 - g) * snowBlend);
+            b = Math.floor(b + (0xf0 - b) * snowBlend);
+            baseRGB = (r << 16) | (g << 8) | b;
+          }
+        }
+
+        // 4. Elevation shading (directional light from upper-left)
         // (moisture tinting applied above in step 2)
         const dot = slopeX[i] * LIGHT_DIR_X + slopeY[i] * LIGHT_DIR_Y;
         let lightFactor = LIGHT_BASE + dot * LIGHT_STRENGTH;

@@ -1,6 +1,7 @@
 import { createNoise2D, type NoiseFunction2D } from 'simplex-noise';
 import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
 import { applyBrightness, packABGR } from './TerrainPalettes';
+import { Season } from '../state/Season';
 
 // ---------------------------------------------------------------------------
 // Terrain Extrusion Renderer (two-pass displacement + gap interpolation)
@@ -10,11 +11,28 @@ import { applyBrightness, packABGR } from './TerrainPalettes';
 //          gaps show rock cliff-face material.
 // ---------------------------------------------------------------------------
 
-// Snow line — only the highest peaks get snow. Below this is bare rock.
-const SNOW_LINE = 0.62;
+// Default snow/rock lines (summer) — shifted by season
+const SNOW_LINE_DEFAULT = 0.62;
+const ROCK_LINE_DEFAULT = 0.48;
 
-// Rock zone: exposed stone above treeline but below snow
-const ROCK_LINE = 0.48;
+// Season-dependent snow/rock line offsets
+function getSnowLine(season: Season): number {
+  switch (season) {
+    case Season.Winter: return 0.38;  // snow much lower
+    case Season.Spring: return 0.52;  // snow retreating
+    case Season.Fall:   return 0.55;  // early snow
+    default:            return SNOW_LINE_DEFAULT;
+  }
+}
+
+function getRockLine(season: Season): number {
+  switch (season) {
+    case Season.Winter: return 0.32;  // rock exposed lower
+    case Season.Spring: return 0.42;
+    case Season.Fall:   return 0.44;
+    default:            return ROCK_LINE_DEFAULT;
+  }
+}
 
 // Maximum upward extrusion in pixels for the highest elevation
 const MAX_EXTRUSION = 150;
@@ -59,13 +77,19 @@ export class MountainRenderer {
   screenToSource: Int32Array | null = null;
   resolution = 0;
 
+  private _snowLine = SNOW_LINE_DEFAULT;
+  private _rockLine = ROCK_LINE_DEFAULT;
+
   render(
     pixels: Uint32Array,
     topo: TopographyGenerator,
     resolution: number,
     seed: number,
     treeMask?: Uint8Array,
+    season: Season = Season.Summer,
   ): void {
+    this._snowLine = getSnowLine(season);
+    this._rockLine = getRockLine(season);
     const rngNoise = mulberry32(seed ^ 0x904e);
     const noise = createNoise2D(rngNoise);
     const rngNoise2 = mulberry32(seed ^ 0x1234);
@@ -149,7 +173,7 @@ export class MountainRenderer {
       // Don't paint over trees
       if (treeMask && treeMask[i]) continue;
 
-      if (elev >= SNOW_LINE) {
+      if (elev >= this._snowLine) {
         // Snow: only the highest peaks
         const px = i % N, py = (i - px) / N;
         const n = noise(px * 0.15, py * 0.15);
@@ -158,13 +182,13 @@ export class MountainRenderer {
         else if (snowVal > 0.7) pixels[i] = packSnow(SNOW_BRIGHT);
         else if (snowVal > 0.55) pixels[i] = packSnow(SNOW_MID);
         else pixels[i] = packSnow(SNOW_SHADOW);
-      } else if (elev >= ROCK_LINE) {
+      } else if (elev >= this._rockLine) {
         // Exposed rock between treeline and snow
         const px = i % N, py = (i - px) / N;
         const n = noise2(px * 0.12, py * 0.12);
         const n2 = noise(px * 0.08, py * 0.08);
         // Mix snow patches into upper rock zone
-        const snowChance = (elev - ROCK_LINE) / (SNOW_LINE - ROCK_LINE);
+        const snowChance = (elev - this._rockLine) / (this._snowLine - this._rockLine);
         if (n2 > 0.3 && snowChance > 0.6) {
           pixels[i] = packSnow(SNOW_SHADOW);
         } else {
@@ -216,7 +240,7 @@ export class MountainRenderer {
         const surfaceLight = 0.65 + lightDot * 0.6;
         const light = Math.max(0.35, Math.min(1.3, surfaceLight));
 
-        if (elev >= SNOW_LINE && !(treeMask && treeMask[idx])) {
+        if (elev >= this._snowLine && !(treeMask && treeMask[idx])) {
           const n = noise(x * 0.15, y * 0.15);
           const snowLight = light + n * 0.15;
           if (snowLight > 1.05) pixels[sidx] = packSnow(SNOW_HIGHLIGHT);
@@ -310,13 +334,13 @@ export class MountainRenderer {
         const n = noise(x * 0.18, gy * 0.18);
         const n2 = noise2(x * 0.12, gy * 0.12);
         let rgb: number;
-        if (elev >= SNOW_LINE) {
+        if (elev >= this._snowLine) {
           // Snow-zone cliff: cool gray rock with occasional snow
           if (n2 > 0.4 && cliffT < 0.3) rgb = SNOW_MID;
           else if (n > 0.2) rgb = CLIFF_SNOW_LIGHT;
           else if (n > -0.2) rgb = CLIFF_SNOW_MID;
           else rgb = CLIFF_SNOW_DARK;
-        } else if (elev >= ROCK_LINE) {
+        } else if (elev >= this._rockLine) {
           // Rock zone: warm brown stone
           if (n2 > 0.3) rgb = CLIFF_HOT;
           else if (n > 0.1) rgb = CLIFF_LIGHT;

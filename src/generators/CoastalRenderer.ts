@@ -2,24 +2,44 @@ import { createNoise2D } from 'simplex-noise';
 import { TopographyGenerator, TerrainType, mulberry32 } from './TopographyGenerator';
 import { HydrologyGenerator } from './HydrologyGenerator';
 import { packABGR, applyBrightness } from './TerrainPalettes';
+import { Season } from '../state/Season';
 
 // ---------------------------------------------------------------------------
 // Beach palette (sandy colors, dark → light)
 // ---------------------------------------------------------------------------
-const BEACH_COLORS = [
-  0xb09860, // dark wet sand
-  0xc0a870, // mid sand
-  0xd0b880, // light sand
-  0xdcc890, // bright sand
-  0xe8d8a0, // highlights
-];
+// Beach colors per season
+const BEACH_COLORS_BY_SEASON: Record<Season, number[]> = {
+  [Season.Spring]: [0xb09860, 0xc0a870, 0xd0b880, 0xdcc890, 0xe8d8a0],
+  [Season.Summer]: [0xb09860, 0xc0a870, 0xd0b880, 0xdcc890, 0xe8d8a0],
+  [Season.Fall]:   [0xa08850, 0xb09860, 0xc0a870, 0xccb880, 0xd8c890],
+  [Season.Winter]: [0x8a7858, 0x9a8868, 0xa89878, 0xb4a888, 0xc0b898],
+};
 
-// Ocean sparkle colors
+// Ocean effect colors per season
+function getOceanColors(season: Season) {
+  if (season === Season.Winter) {
+    return {
+      sparkleDim:    packABGR(0x38, 0x60, 0x88),
+      sparkleMid:    packABGR(0x58, 0x88, 0xb0),
+      sparkleBright: packABGR(0x90, 0xc0, 0xd8),
+      waveFoam:      packABGR(0xb8, 0xd0, 0xd8),
+      waveBright:    packABGR(0xd0, 0xe0, 0xe8),
+    };
+  }
+  return {
+    sparkleDim:    packABGR(0x50, 0x80, 0xa8),
+    sparkleMid:    packABGR(0x80, 0xb0, 0xd0),
+    sparkleBright: packABGR(0xc0, 0xe0, 0xf0),
+    waveFoam:      packABGR(0xd0, 0xe8, 0xf0),
+    waveBright:    packABGR(0xe8, 0xf4, 0xf8),
+  };
+}
+
+// Default colors for backward compatibility
+const BEACH_COLORS = BEACH_COLORS_BY_SEASON[Season.Summer];
 const SPARKLE_DIM = packABGR(0x50, 0x80, 0xa8);
 const SPARKLE_MID = packABGR(0x80, 0xb0, 0xd0);
 const SPARKLE_BRIGHT = packABGR(0xc0, 0xe0, 0xf0);
-
-// Wave foam colors
 const WAVE_FOAM = packABGR(0xd0, 0xe8, 0xf0);
 const WAVE_BRIGHT = packABGR(0xe8, 0xf4, 0xf8);
 
@@ -54,13 +74,17 @@ export class CoastalRenderer {
    * Render beaches, sea stacks onto the pixel buffer (static pass).
    * Also collects animated pixel metadata for sparkles and waves.
    */
+  private _season: Season = Season.Summer;
+
   render(
     pixels: Uint32Array,
     topo: TopographyGenerator,
     hydro: HydrologyGenerator,
     resolution: number,
     seed: number,
+    season: Season = Season.Summer,
   ): void {
+    this._season = season;
     const rng = mulberry32(seed ^ 0xbeac0000);
     const N = resolution;
     this._resolution = N;
@@ -198,16 +222,17 @@ export class CoastalRenderer {
         if (dist > edgeVariation) continue;
 
         // Sand color based on distance from water (darker near water = wet sand)
+        const beachColors = BEACH_COLORS_BY_SEASON[season];
         const t = dist / BEACH_WIDTH;
-        const colorIdx = Math.min(BEACH_COLORS.length - 1,
-          Math.floor(t * BEACH_COLORS.length));
+        const colorIdx = Math.min(beachColors.length - 1,
+          Math.floor(t * beachColors.length));
 
         // Add slight noise variation
         const detailN = beachNoise(wx * 0.05, wy * 0.05);
-        const adjustedIdx = Math.max(0, Math.min(BEACH_COLORS.length - 1,
+        const adjustedIdx = Math.max(0, Math.min(beachColors.length - 1,
           colorIdx + Math.floor(detailN * 1.5)));
 
-        const rgb = BEACH_COLORS[adjustedIdx];
+        const rgb = beachColors[adjustedIdx];
         // Apply same directional lighting as ground
         const brightness = 0.85 + detailN * 0.15;
         pixels[i] = applyBrightness(rgb, brightness);
@@ -281,6 +306,10 @@ export class CoastalRenderer {
     const timeSec = timeMs / 1000;
     const ext = this.extrusionMap;
     const N = this._resolution;
+    const colors = getOceanColors(this._season);
+    // Winter: choppier waves (faster animation)
+    const waveSpeed = this._season === Season.Winter ? 2.2 : 1.5;
+    const sparkleSpeed = this._season === Season.Winter ? 1.2 : 0.8;
 
     for (let i = 0; i < this._animatedPixels.length; i++) {
       const cp = this._animatedPixels[i];
@@ -296,20 +325,20 @@ export class CoastalRenderer {
       }
 
       if (cp.type === 'sparkle') {
-        const sparkle = Math.sin(cp.phase + timeSec * 0.8) *
+        const sparkle = Math.sin(cp.phase + timeSec * sparkleSpeed) *
                         Math.sin(cp.phase * 1.3 + timeSec * 0.3);
         if (sparkle > 0.5) {
-          pixels[outIdx] = sparkle > 0.8 ? SPARKLE_BRIGHT :
-                           sparkle > 0.65 ? SPARKLE_MID : SPARKLE_DIM;
+          pixels[outIdx] = sparkle > 0.8 ? colors.sparkleBright :
+                           sparkle > 0.65 ? colors.sparkleMid : colors.sparkleDim;
         } else {
           pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }
       } else if (cp.type === 'wave') {
-        const wave = Math.sin(cp.phase - timeSec * 1.5);
+        const wave = Math.sin(cp.phase - timeSec * waveSpeed);
         const threshold = 0.6 - cp.intensity * 0.3;
         if (wave > threshold) {
           const bright = wave > threshold + 0.2;
-          pixels[outIdx] = bright ? WAVE_BRIGHT : WAVE_FOAM;
+          pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
         } else {
           pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }

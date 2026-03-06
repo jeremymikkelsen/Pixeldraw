@@ -70,7 +70,9 @@ export class MapScene extends Phaser.Scene {
   create(): void {
     this._ui = new UIManager();
     this._ui.onTurnAdvanced = () => {
-      console.log(`[Turn] ${this._state.year}, ${this._state.season}`);
+      console.log(`[Turn] Year ${this._state.year}, ${this._state.season}`);
+      this._renderMap();
+      this._ui.setState(this._state, this._regionGrid!);
     };
 
     // Camera setup
@@ -399,10 +401,8 @@ export class MapScene extends Phaser.Scene {
 
   /**
    * Initialize game state and render the map.
-   * Replaces the old _generateMap with state/rendering separation.
    */
   private _initializeGame(seed: number): void {
-    // --- Create game state ---
     this._state = createGameState(seed, MAP_SIZE, this._playerHouse);
     const { topo, hydro, duchies } = this._state;
 
@@ -413,18 +413,32 @@ export class MapScene extends Phaser.Scene {
       duchies: duchies.map(d => `${d.house.name} (${d.regions.length} regions)`),
     });
 
-    // --- Render map ---
-    const renderer = new GroundRenderer();
-    const pixels = renderer.render(topo, PIXEL_RESOLUTION, hydro);
+    this._renderMap();
 
-    // Duchy territory tint + borders (after ground, before trees)
+    // Update UI
+    if (this._ui && this._regionGrid) {
+      this._ui.setState(this._state, this._regionGrid);
+    }
+  }
+
+  /**
+   * Re-render the map from current game state (called on init and each turn).
+   */
+  private _renderMap(): void {
+    const { topo, hydro, seed, season } = this._state;
+
+    // Ground with seasonal palettes
+    const renderer = new GroundRenderer();
+    const pixels = renderer.render(topo, PIXEL_RESOLUTION, hydro, season);
+
+    // Duchy territory tint + borders
     if (renderer.regionGrid) {
       renderDuchies(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION);
     }
 
     // Beaches, ocean sparkles, sea stacks
     const coastalRenderer = new CoastalRenderer();
-    coastalRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
+    coastalRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed, season);
 
     // River deltas and harbors
     const deltaRenderer = new RiverDeltaRenderer();
@@ -433,13 +447,13 @@ export class MapScene extends Phaser.Scene {
     // Static rivers
     renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
 
-    // Trees
+    // Trees with seasonal palettes
     const treeRenderer = new TreeRenderer();
-    const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
+    const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed, season);
 
-    // Mountain extrusion
+    // Mountain extrusion with seasonal snow line
     const mountainRenderer = new MountainRenderer();
-    mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, treeMask);
+    mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, treeMask, season);
     this._extrusionMap = mountainRenderer.extrusionMap;
     this._screenToSource = mountainRenderer.screenToSource;
 
@@ -464,12 +478,7 @@ export class MapScene extends Phaser.Scene {
     this._airMoistureOverlay = this._buildAirMoistureOverlay(renderer.regionGrid);
     this._activeOverlay = 'none';
 
-    // Update UI
-    if (this._ui && renderer.regionGrid) {
-      this._ui.setState(this._state, renderer.regionGrid);
-    }
-
-    // Create texture
+    // Create/update texture
     const texKey = 'topo';
     if (this.textures.exists(texKey)) {
       this.textures.remove(texKey);

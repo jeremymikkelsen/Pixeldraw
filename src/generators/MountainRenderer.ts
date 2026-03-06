@@ -141,13 +141,29 @@ export class MountainRenderer {
       }
     }
 
-    // Snapshot the current pixel buffer (preserves ground, trees, rivers)
+    // Pre-paint snow onto the buffer for high-elevation pixels.
+    // This ensures back-slopes (occluded by extrusion) still show snow
+    // when we fall back to the source image.
+    for (let i = 0; i < N * N; i++) {
+      if (smoothElev[i] >= SNOW_LINE) {
+        const px = i % N, py = (i - px) / N;
+        const n = noise(px * 0.15, py * 0.15);
+        const snowVal = 0.7 + n * 0.2;
+        let snowRGB: number;
+        if (snowVal > 0.85) snowRGB = SNOW_HIGHLIGHT;
+        else if (snowVal > 0.7) snowRGB = SNOW_BRIGHT;
+        else if (snowVal > 0.55) snowRGB = SNOW_MID;
+        else snowRGB = SNOW_SHADOW;
+        pixels[i] = snowRGB;
+      }
+    }
+
+    // Snapshot the current pixel buffer (now includes snow on peaks)
     const srcPixels = new Uint32Array(pixels);
 
-    // Clear entire buffer — every pixel will be redrawn at its extruded
-    // position. Background is dark navy (visible where terrain doesn't reach).
-    const BG_FILL = packABGR(12, 18, 40);
-    pixels.fill(BG_FILL);
+    // Track which output pixels have been written by the extrusion pass.
+    // Avoids the signed/unsigned comparison bug with sentinel colors.
+    const drawn = new Uint8Array(N * N);
 
     // Process each column independently
     for (let x = 0; x < N; x++) {
@@ -160,8 +176,8 @@ export class MountainRenderer {
         // Extrusion height: t² curve (ocean barely rises, peaks dramatic)
         const extrusion = Math.floor(elev * elev * MAX_EXTRUSION);
         if (extrusion < MIN_EXTRUSION) {
-          // No extrusion — just copy original pixel in place
-          pixels[y * N + x] = srcPixels[y * N + x];
+          // No extrusion — pixel stays at its original position
+          drawn[y * N + x] = 1;
           continue;
         }
 
@@ -187,6 +203,7 @@ export class MountainRenderer {
 
         for (let sy = drawFrom; sy <= drawTo; sy++) {
           const colT = extrusion > 0 ? (sy - screenTop) / extrusion : 0;
+          drawn[sy * N + x] = 1;
 
           // Surface pixels (top ~15%): preserve original rendered colors
           // with slope-based brightness adjustment. Snow replaces surface
@@ -235,11 +252,11 @@ export class MountainRenderer {
       }
     }
 
-    // Any pixel still showing background fill is an occluded back-slope
-    // (hidden behind a ridge from the viewing angle). Fall back to the
-    // original flat-rendered pixel so there are no dark voids.
+    // Restore source pixels for any position not covered by the extrusion.
+    // This fills occluded back-slopes with the pre-painted source (including
+    // snow). Source pixels already include the snow we painted above.
     for (let i = 0; i < N * N; i++) {
-      if (pixels[i] === BG_FILL) {
+      if (!drawn[i]) {
         pixels[i] = srcPixels[i];
       }
     }

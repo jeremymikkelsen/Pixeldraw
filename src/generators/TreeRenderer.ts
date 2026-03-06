@@ -461,6 +461,7 @@ export class TreeRenderer {
     resolution: number,
     seed: number,
     season: Season = Season.Summer,
+    structureMask?: Uint8Array,
   ): Uint8Array {
     const rng = mulberry32(seed ^ 0x7ee0000);
     const N = resolution;
@@ -515,6 +516,9 @@ export class TreeRenderer {
 
       // River avoidance
       if (riverMask[py * N + px]) continue;
+
+      // Structure avoidance — don't place trees on buildings
+      if (structureMask && structureMask[py * N + px]) continue;
 
       // Find nearest region
       const wx = (px + 0.5) * scale;

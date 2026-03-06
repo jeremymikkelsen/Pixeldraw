@@ -5,6 +5,7 @@ import { RiverAnimator } from '../generators/RiverAnimator';
 import { CoastalRenderer } from '../generators/CoastalRenderer';
 import { MountainRenderer } from '../generators/MountainRenderer';
 import { RiverDeltaRenderer } from '../generators/RiverDeltaRenderer';
+import { StructureRenderer } from '../generators/StructureRenderer';
 import { GameState, createGameState } from '../state/GameState';
 import { renderDuchies, renderDuchyBordersOnTop } from '../renderers/DuchyRenderer';
 import { UIManager } from '../ui/UIManager';
@@ -453,9 +454,16 @@ export class MapScene extends Phaser.Scene {
     // Static rivers
     renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
 
-    // Trees with seasonal palettes
+    // Structures (cottages, manors) — before trees so trees grow around buildings
+    const structureRenderer = new StructureRenderer();
+    const structureMask = structureRenderer.renderStructures(
+      pixels, topo, hydro, PIXEL_RESOLUTION, seed,
+      this._state.duchies, this._state.regionToDuchy, season,
+    );
+
+    // Trees with seasonal palettes (pass structureMask to avoid overlapping buildings)
     const treeRenderer = new TreeRenderer();
-    const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed, season);
+    const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed, season, structureMask);
 
     // Mountain extrusion with seasonal snow line
     const mountainRenderer = new MountainRenderer();

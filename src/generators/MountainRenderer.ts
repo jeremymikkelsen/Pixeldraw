@@ -27,7 +27,7 @@ function getSnowLine(season: Season): number {
 
 function getRockLine(season: Season): number {
   switch (season) {
-    case Season.Winter: return 0.37;  // nearly same as snow line — minimal exposed rock in winter
+    case Season.Winter: return 0;     // no exposed rock in winter — all snow
     case Season.Spring: return 0.42;
     case Season.Fall:   return 0.52;  // more exposed rock, less snow
     default:            return ROCK_LINE_DEFAULT;

@@ -202,6 +202,93 @@ const CONIFER_TEMPLATES: SpriteTemplate[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Bare tree templates (winter deciduous) — dendritic branching patterns
+// All non-transparent pixels use T (trunk/branch color)
+// ---------------------------------------------------------------------------
+const BARE_TEMPLATES: SpriteTemplate[] = [
+  // Small bare tree (5×8) — simple Y-fork
+  { w: 5, h: 8, data: [
+    _, T, _, T, _,
+    _, T, _, T, _,
+    _, _, T, _, _,
+    _, T, T, T, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+  ]},
+  // Small bare variant (5×8) — asymmetric
+  { w: 5, h: 8, data: [
+    T, _, _, _, T,
+    _, T, _, T, _,
+    _, T, _, T, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+    _, _, T, _, _,
+  ]},
+  // Medium bare tree (7×10) — multi-branch
+  { w: 7, h: 10, data: [
+    _, T, _, _, _, T, _,
+    _, T, _, _, _, T, _,
+    _, _, T, _, T, _, _,
+    _, _, T, _, T, _, _,
+    _, _, _, T, _, _, _,
+    _, _, T, T, T, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+  ]},
+  // Medium bare variant (7×11) — spreading crown
+  { w: 7, h: 11, data: [
+    T, _, _, _, _, _, T,
+    _, T, _, _, _, T, _,
+    _, T, _, T, _, T, _,
+    _, _, T, T, T, _, _,
+    _, _, _, T, _, _, _,
+    _, _, T, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+    _, _, _, T, _, _, _,
+  ]},
+  // Large bare tree (9×12) — wide branching canopy
+  { w: 9, h: 12, data: [
+    T, _, _, _, _, _, _, _, T,
+    _, T, _, _, _, _, _, T, _,
+    _, T, _, _, T, _, _, T, _,
+    _, _, T, _, T, _, T, _, _,
+    _, _, _, T, T, T, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, T, T, T, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+  ]},
+  // Large bare variant (9×13) — gnarled with sub-branches
+  { w: 9, h: 13, data: [
+    _, T, _, _, _, _, _, T, _,
+    _, _, T, _, _, _, T, _, _,
+    T, _, T, _, _, _, T, _, T,
+    _, T, _, T, _, T, _, T, _,
+    _, _, _, T, _, T, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, T, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+    _, _, _, _, T, _, _, _, _,
+  ]},
+];
+
+// ---------------------------------------------------------------------------
 // Color palettes
 // ---------------------------------------------------------------------------
 interface TreePalette {
@@ -434,7 +521,9 @@ export class TreeRenderer {
       }
 
       // Pick size based on moisture (wetter = bigger)
-      const templates = isConifer ? CONIFER_TEMPLATES : DECIDUOUS_TEMPLATES;
+      // Winter deciduous: use bare tree templates with dendritic branching
+      const isBareWinter = season === Season.Winter && !isConifer;
+      const templates = isConifer ? CONIFER_TEMPLATES : (isBareWinter ? BARE_TEMPLATES : DECIDUOUS_TEMPLATES);
       const palettes = isConifer ? getConiferPalettes(season) : getDeciduousPalettes(season, rng);
       const sizeRoll = rng() + moisture * 0.3;
       let templateIdx: number;
@@ -455,7 +544,7 @@ export class TreeRenderer {
         py,
         template: templates[templateIdx],
         palette: palettes[Math.floor(rng() * palettes.length)],
-        flipped: false,
+        flipped: rng() < 0.5,
         isConifer,
         season,
       });
@@ -588,8 +677,6 @@ export class TreeRenderer {
   // -----------------------------------------------------------------------
   private _stampSprite(pixels: Uint32Array, N: number, tree: TreeInstance, treeMask?: Uint8Array): void {
     const { px: tx, py: ty, template, palette, flipped, isConifer, season } = tree;
-    // Winter deciduous: only draw ~30% of canopy pixels (bare branches)
-    const isBareSeason = season === Season.Winter && !isConifer;
     const { w, h, data } = template;
 
     // Tree position: trunk base at (tx, ty), sprite extends upward
@@ -622,24 +709,6 @@ export class TreeRenderer {
         const px = startX + sx;
         const py = startY + sy;
         if (px < 0 || px >= N || py < 0 || py >= N) continue;
-
-        // Winter deciduous: sparse canopy → bare branches
-        if (isBareSeason && cell === C) {
-          const distFromCenter = Math.abs(srcX - Math.floor(w / 2));
-          // Keep trunk-adjacent pixels (branches) and scattered outer twigs
-          if (distFromCenter <= 1) {
-            // Near trunk: keep ~75% as main branches
-            if (((tx + sy * 7) & 3) === 0) continue;
-          } else if (distFromCenter <= 2) {
-            // Mid-range: keep ~50% as secondary branches
-            if (((tx * 3 + sy * 5) & 1) !== 0) continue;
-          } else if (distFromCenter <= 3) {
-            // Outer twigs: keep ~25%
-            if (((tx * 5 + sy * 3) & 3) !== 0) continue;
-          } else {
-            continue;
-          }
-        }
 
         let color: number;
         if (cell === T) {

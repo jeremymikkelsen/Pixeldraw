@@ -232,6 +232,7 @@ export interface StructureInstance {
   template: SpriteTemplate;
   flipped: boolean;
   isCapital: boolean;
+  duchyIndex: number;  // which duchy this capital belongs to (-1 for cottages)
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +276,8 @@ export class StructureRenderer {
     // ------------------------------------------------------------------
     const structures: StructureInstance[] = [];
 
-    for (const duchy of duchies) {
+    for (let di = 0; di < duchies.length; di++) {
+      const duchy = duchies[di];
       const cr = duchy.capitalRegion;
       if (cr < 0 || cr >= numRegions) continue;
 
@@ -313,6 +315,7 @@ export class StructureRenderer {
         template,
         flipped: false,
         isCapital: true,
+        duchyIndex: di,
       });
     }
 
@@ -385,6 +388,7 @@ export class StructureRenderer {
         template: COTTAGE_TEMPLATES[templateIdx],
         flipped: rng() < 0.5,
         isCapital: false,
+        duchyIndex: -1,
       });
     }
 
@@ -400,14 +404,15 @@ export class StructureRenderer {
 
   /**
    * Phase 2: Render shadows + sprites into pixels.
-   * If manorSprite is provided, capital buildings use the loaded PNG directly.
+   * If manorSprites is provided, capital buildings use the loaded PNGs directly,
+   * cycling through the array based on duchy index.
    */
   renderSprites(
     pixels: Uint32Array,
     resolution: number,
     structures: StructureInstance[],
     season: Season = Season.Summer,
-    manorSprite?: LoadedSprite,
+    manorSprites?: LoadedSprite[],
   ): void {
     const palette = getPalette(season);
 
@@ -415,8 +420,9 @@ export class StructureRenderer {
       this._stampShadow(pixels, resolution, s);
     }
     for (const s of structures) {
-      if (s.isCapital && manorSprite) {
-        this._stampLoadedSprite(pixels, resolution, s, manorSprite);
+      if (s.isCapital && manorSprites && manorSprites.length > 0) {
+        const sprite = manorSprites[s.duchyIndex % manorSprites.length];
+        this._stampLoadedSprite(pixels, resolution, s, sprite);
       } else {
         this._stampSprite(pixels, resolution, s, palette);
       }

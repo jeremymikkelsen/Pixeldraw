@@ -61,8 +61,8 @@ export class MapScene extends Phaser.Scene {
   private _state!: GameState;
   private _ui!: UIManager;
 
-  // Pre-loaded manor sprite (from PNG)
-  private _manorSprite: LoadedSprite | null = null;
+  // Pre-loaded manor sprites (from PNGs) — one per duchy style
+  private _manorSprites: LoadedSprite[] = [];
 
   constructor() {
     super({ key: 'MapScene' });
@@ -147,13 +147,21 @@ export class MapScene extends Phaser.Scene {
       this._setupScreen.destroy();
     }
 
-    // Ensure manor sprite is loaded before first render
-    if (!this._manorSprite) {
-      try {
-        this._manorSprite = await loadSprite('/sprites/manor.png');
-        console.log('[Sprite] Manor loaded:', this._manorSprite.w, '×', this._manorSprite.h);
-      } catch (e) {
-        console.warn('[Sprite] Failed to load manor sprite, using fallback templates', e);
+    // Ensure manor sprites are loaded before first render
+    if (this._manorSprites.length === 0) {
+      const spriteUrls = [
+        '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784363719.png',
+        '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784433859.png',
+        '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784503776.png',
+      ];
+      const results = await Promise.allSettled(spriteUrls.map(url => loadSprite(url)));
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          this._manorSprites.push(result.value);
+          console.log('[Sprite] Manor loaded:', result.value.w, '×', result.value.h);
+        } else {
+          console.warn('[Sprite] Failed to load manor sprite:', result.reason);
+        }
       }
     }
 
@@ -501,7 +509,7 @@ export class MapScene extends Phaser.Scene {
     }
 
     // Structures on top of duchy borders (3/4 perspective with ground shadows)
-    structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprite ?? undefined);
+    structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
 
     // Store refs
     this._pixels = pixels;

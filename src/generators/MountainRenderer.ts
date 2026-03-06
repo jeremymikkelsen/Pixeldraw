@@ -102,7 +102,7 @@ export class MountainRenderer {
     const { points, numRegions } = topo.mesh;
 
     // Build spatial grid for region lookup
-    const cellSize = 40;
+    const cellSize = 80;
     const gridW = Math.ceil(topo.size / cellSize);
     const grid: number[][] = new Array(gridW * gridW);
     for (let i = 0; i < grid.length; i++) grid[i] = [];

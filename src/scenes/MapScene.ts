@@ -378,9 +378,11 @@ export class MapScene extends Phaser.Scene {
 
     // River animator pre-computes pixel positions; skips tree-covered pixels
     const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask);
+    riverAnimator.extrusionMap = mountainRenderer.extrusionMap;
     riverAnimator.animate(pixels, 0);
 
-    // Coastal animation first frame
+    // Coastal animation first frame (with extrusion remapping)
+    coastalRenderer.extrusionMap = mountainRenderer.extrusionMap;
     coastalRenderer.animate(pixels, 0);
 
     // Store refs for per-frame animation

@@ -75,6 +75,7 @@ export class RiverAnimator {
   private _pixels: RiverPixel[] = [];
   private _N: number;
   private _treeMask: Uint8Array | null = null;
+  extrusionMap: Int16Array | null = null;
 
   constructor(
     topo: TopographyGenerator,
@@ -199,8 +200,9 @@ export class RiverAnimator {
   // -----------------------------------------------------------------------
   animate(pixels: Uint32Array, timeMs: number): void {
     const timeSec = timeMs / 1000;
-
     const treeMask = this._treeMask;
+    const ext = this.extrusionMap;
+    const N = this._N;
 
     for (let i = 0; i < this._pixels.length; i++) {
       const rp = this._pixels[i];
@@ -208,14 +210,23 @@ export class RiverAnimator {
       // Skip pixels covered by tree canopy
       if (treeMask && treeMask[rp.idx]) continue;
 
+      // Remap to extruded screen position
+      let outIdx = rp.idx;
+      if (ext) {
+        const px = rp.idx % N;
+        const py = (rp.idx - px) / N;
+        const screenY = py - ext[rp.idx];
+        if (screenY < 0 || screenY >= N) continue;
+        outIdx = screenY * N + px;
+      }
+
       // Static decorations
       if (rp.type === PixelType.Rock) {
-        // Alternate rock colors for texture
-        pixels[rp.idx] = ((rp.idx >> 1) & 1) ? ROCK_COLOR : ROCK_DARK;
+        pixels[outIdx] = ((rp.idx >> 1) & 1) ? ROCK_COLOR : ROCK_DARK;
         continue;
       }
       if (rp.type === PixelType.Log) {
-        pixels[rp.idx] = ((rp.idx >> 2) & 1) ? LOG_COLOR : LOG_DARK;
+        pixels[outIdx] = ((rp.idx >> 2) & 1) ? LOG_COLOR : LOG_DARK;
         continue;
       }
 
@@ -226,31 +237,24 @@ export class RiverAnimator {
 
       // Wave phase: highlight bands moving downstream
       const wave = Math.sin((rp.phase * WAVE_FREQ - timeSec * speed) * 0.5);
-      // Map sine [-1..1] → shade index [0..2]
       const shadeIdx = wave < -0.3 ? 0 : wave > 0.3 ? 2 : 1;
 
       let color = CALM_COLORS[rp.widthTier][shadeIdx];
 
-      // Rapids/waterfall foam — sparkles travel downstream, intensity scales with elevation
+      // Rapids/waterfall foam
       if (isRapids) {
-        // How far above rapids threshold (0 at threshold, 1 at waterfall+)
         const intensity = Math.min(1,
           (rp.elevation - RAPIDS_ELEV) / (WATERFALL_ELEV - RAPIDS_ELEV));
-
-        // Flow-aligned sparkle: phase shifts downstream over time
         const foamPhase = rp.phase * 0.8 - timeSec * RAPIDS_SPEED * 0.7;
-        // Per-pixel spatial jitter so sparkles don't form perfect lines
         const jitter = fastHash(rp.idx) & 0xff;
         const sparkle = Math.sin(foamPhase + jitter * 0.05);
-
-        // Higher elevation = lower threshold to show sparkle (more foam)
-        const threshold = 0.7 - intensity * 0.6;  // ranges 0.7 (mild) to 0.1 (heavy)
+        const threshold = 0.7 - intensity * 0.6;
         if (sparkle > threshold) {
           color = (isWaterfall && sparkle > 0.6) ? FOAM_BRIGHT : FOAM_COLOR;
         }
       }
 
-      pixels[rp.idx] = color;
+      pixels[outIdx] = color;
     }
   }
 

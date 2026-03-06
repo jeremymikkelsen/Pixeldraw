@@ -45,6 +45,8 @@ export interface CoastalPixel {
 export class CoastalRenderer {
   private _animatedPixels: CoastalPixel[] = [];
   private _baseColors: Map<number, number> = new Map(); // idx -> original ABGR color
+  extrusionMap: Int16Array | null = null;
+  private _resolution = 0;
 
   get animatedPixels(): CoastalPixel[] { return this._animatedPixels; }
 
@@ -61,6 +63,7 @@ export class CoastalRenderer {
   ): void {
     const rng = mulberry32(seed ^ 0xbeac0000);
     const N = resolution;
+    this._resolution = N;
     const scale = topo.size / N;
     const { points, numRegions } = topo.mesh;
 
@@ -276,30 +279,39 @@ export class CoastalRenderer {
    */
   animate(pixels: Uint32Array, timeMs: number): void {
     const timeSec = timeMs / 1000;
+    const ext = this.extrusionMap;
+    const N = this._resolution;
 
     for (let i = 0; i < this._animatedPixels.length; i++) {
       const cp = this._animatedPixels[i];
 
+      // Remap to extruded screen position
+      let outIdx = cp.idx;
+      if (ext) {
+        const px = cp.idx % N;
+        const py = (cp.idx - px) / N;
+        const screenY = py - ext[cp.idx];
+        if (screenY < 0 || screenY >= N) continue;
+        outIdx = screenY * N + px;
+      }
+
       if (cp.type === 'sparkle') {
-        // Sun reflection sparkle: slow twinkle
         const sparkle = Math.sin(cp.phase + timeSec * 0.8) *
                         Math.sin(cp.phase * 1.3 + timeSec * 0.3);
         if (sparkle > 0.5) {
-          pixels[cp.idx] = sparkle > 0.8 ? SPARKLE_BRIGHT :
+          pixels[outIdx] = sparkle > 0.8 ? SPARKLE_BRIGHT :
                            sparkle > 0.65 ? SPARKLE_MID : SPARKLE_DIM;
         } else {
-          // Restore base color
-          pixels[cp.idx] = this._baseColors.get(cp.idx)!;
+          pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }
       } else if (cp.type === 'wave') {
-        // Waves: periodic foam lines moving toward shore
         const wave = Math.sin(cp.phase - timeSec * 1.5);
-        const threshold = 0.6 - cp.intensity * 0.3; // closer to shore = more foam
+        const threshold = 0.6 - cp.intensity * 0.3;
         if (wave > threshold) {
           const bright = wave > threshold + 0.2;
-          pixels[cp.idx] = bright ? WAVE_BRIGHT : WAVE_FOAM;
+          pixels[outIdx] = bright ? WAVE_BRIGHT : WAVE_FOAM;
         } else {
-          pixels[cp.idx] = this._baseColors.get(cp.idx)!;
+          pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }
       }
     }

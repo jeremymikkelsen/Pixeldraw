@@ -177,6 +177,7 @@ export class GroundRenderer {
         }
 
         // 3. Winter snow coverage on land — blanket coverage with sparse green patches
+        let isSnow = false;
         if (season === Season.Winter && terrain !== 'ocean' && terrain !== 'water') {
           // Mid-frequency noise for moderate-sized grass patches
           const patchNoise = detailNoise(wx * 0.02, wy * 0.02);
@@ -185,34 +186,30 @@ export class GroundRenderer {
           // Very selective: only ~3-5% of land shows through as grass
           const greenPatch = (patchNoise > 0.7) && (edgeNoise > 0.4);
           if (!greenPatch) {
-            // Snow palette matching MountainRenderer exactly
-            const snowNoise = detailNoise(wx * 0.03, wy * 0.03);
-            const snowT = (snowNoise + 1) / 2; // 0..1
-            if (snowT > 0.75) {
-              baseRGB = 0xf0f8ff; // SNOW_HIGHLIGHT
-            } else if (snowT > 0.5) {
-              baseRGB = 0xe0ecf4; // SNOW_BRIGHT
-            } else if (snowT > 0.25) {
-              baseRGB = 0xc8d8e8; // SNOW_MID
-            } else {
-              baseRGB = 0xa0b8d0; // SNOW_SHADOW
-            }
+            isSnow = true;
           }
         }
 
         // 4. Elevation shading (directional light from upper-left)
-        // In winter, dampen shading on snow-covered ground so snow stays white
         const dot = slopeX[i] * LIGHT_DIR_X + slopeY[i] * LIGHT_DIR_Y;
         let lightFactor = LIGHT_BASE + dot * LIGHT_STRENGTH;
-        if (season === Season.Winter && terrain !== 'ocean' && terrain !== 'water') {
-          // Gentle shading on snow — keep it bright, matching highland snow
+        if (isSnow) {
+          // Snow: select shade from palette based on light + noise,
+          // matching MountainRenderer's approach (no brightness dimming)
           lightFactor = 0.88 + (lightFactor - LIGHT_BASE) * 0.25;
+          const snowNoise = detailNoise(wx * 0.03, wy * 0.03);
+          const snowLight = lightFactor + snowNoise * 0.15;
+          if (snowLight > 1.05) baseRGB = 0xf0f8ff;      // SNOW_HIGHLIGHT
+          else if (snowLight > 0.85) baseRGB = 0xe0ecf4;  // SNOW_BRIGHT
+          else if (snowLight > 0.65) baseRGB = 0xc8d8e8;  // SNOW_MID
+          else baseRGB = 0xa0b8d0;                         // SNOW_SHADOW
+          pixels[i] = applyBrightness(baseRGB, 1.0);
+        } else {
+          lightFactor = Math.max(0.35, Math.min(1.0, lightFactor));
+          // Quantize for pixel-art stepped shading
+          lightFactor = Math.floor(lightFactor * LIGHT_STEPS) / LIGHT_STEPS;
+          pixels[i] = applyBrightness(baseRGB, lightFactor);
         }
-        lightFactor = Math.max(0.35, Math.min(1.0, lightFactor));
-        // Quantize for pixel-art stepped shading
-        lightFactor = Math.floor(lightFactor * LIGHT_STEPS) / LIGHT_STEPS;
-
-        pixels[i] = applyBrightness(baseRGB, lightFactor);
       }
     }
 

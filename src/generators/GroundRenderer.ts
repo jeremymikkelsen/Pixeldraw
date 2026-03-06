@@ -185,11 +185,11 @@ export class GroundRenderer {
             let r = (baseRGB >> 16) & 0xff;
             let g = (baseRGB >> 8) & 0xff;
             let b = baseRGB & 0xff;
-            // High blend — almost pure snow white
-            const snowBlend = 0.85 + dn2 * 0.08;
-            r = Math.floor(r + (0xe0 - r) * snowBlend);
-            g = Math.floor(g + (0xe8 - g) * snowBlend);
-            b = Math.floor(b + (0xf0 - b) * snowBlend);
+            // Near-white snow with slight blue tinge
+            const snowBlend = 0.92 + dn2 * 0.05;
+            r = Math.floor(r + (0xf0 - r) * snowBlend);
+            g = Math.floor(g + (0xf4 - g) * snowBlend);
+            b = Math.floor(b + (0xf8 - b) * snowBlend);
             baseRGB = (r << 16) | (g << 8) | b;
           }
         }

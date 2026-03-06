@@ -7,9 +7,11 @@
  */
 
 import { GameState } from '../state/GameState';
+import { Season } from '../state/Season';
 
 // Blend factor for duchy territory tinting
 const TINT_ALPHA = 0.15;
+const TINT_ALPHA_WINTER = 0.06; // much subtler in winter so snow stays white
 // Border brightness boost (1.0 = original, >1.0 = brighter)
 const BORDER_BRIGHTEN = 1.6;
 // Minimum brightness for border channels so dark colors are still visible
@@ -45,7 +47,9 @@ export function renderDuchies(
     duchyB[d] = c & 0xff;
   }
 
-  // Pass 1: Territory tint
+  // Pass 1: Territory tint (reduced in winter to keep snow white)
+  const alpha = state.season === Season.Winter ? TINT_ALPHA_WINTER : TINT_ALPHA;
+  const oneMinusAlpha = 1 - alpha;
   for (let i = 0; i < total; i++) {
     const region = regionGrid[i];
     const duchyIdx = regionToDuchy[region];
@@ -58,9 +62,9 @@ export function renderDuchies(
     const pb = (px >> 16) & 0xff;
 
     // Blend with duchy color
-    const nr = Math.floor(pr * (1 - TINT_ALPHA) + duchyR[duchyIdx] * TINT_ALPHA);
-    const ng = Math.floor(pg * (1 - TINT_ALPHA) + duchyG[duchyIdx] * TINT_ALPHA);
-    const nb = Math.floor(pb * (1 - TINT_ALPHA) + duchyB[duchyIdx] * TINT_ALPHA);
+    const nr = Math.floor(pr * oneMinusAlpha + duchyR[duchyIdx] * alpha);
+    const ng = Math.floor(pg * oneMinusAlpha + duchyG[duchyIdx] * alpha);
+    const nb = Math.floor(pb * oneMinusAlpha + duchyB[duchyIdx] * alpha);
 
     pixels[i] = (255 << 24) | (nb << 16) | (ng << 8) | nr;
   }

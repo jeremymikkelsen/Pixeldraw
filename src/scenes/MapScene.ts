@@ -10,6 +10,7 @@ import { GameState, createGameState } from '../state/GameState';
 import { renderDuchies, renderDuchyBordersOnTop } from '../renderers/DuchyRenderer';
 import { UIManager } from '../ui/UIManager';
 import { SetupScreen } from '../ui/SetupScreen';
+import { RoadRenderer } from '../generators/RoadRenderer';
 import { loadSprite, type LoadedSprite } from '../generators/SpriteLoader';
 
 const MAP_SIZE = 3072;
@@ -441,6 +442,7 @@ export class MapScene extends Phaser.Scene {
       regions: topo.mesh.numRegions,
       rivers: hydro.rivers.length,
       duchies: duchies.map(d => `${d.house.name} (${d.regions.length} regions)`),
+      roads: this._state.roads.length,
     });
 
     this._renderMap();
@@ -477,6 +479,10 @@ export class MapScene extends Phaser.Scene {
     // Static rivers
     renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
 
+    // Roads between duchy capitals
+    const roadRenderer = new RoadRenderer();
+    const roadMask = roadRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, this._state.roads);
+
     // Structure placement (before trees so trees grow around buildings)
     const structureRenderer = new StructureRenderer();
     const { structures, mask: structureMask } = structureRenderer.placeStructures(
@@ -484,7 +490,12 @@ export class MapScene extends Phaser.Scene {
       this._state.duchies, this._state.regionToDuchy,
     );
 
-    // Trees with seasonal palettes (pass structureMask to avoid overlapping buildings)
+    // Merge road mask into structure mask so trees avoid roads
+    for (let i = 0; i < roadMask.length; i++) {
+      if (roadMask[i]) structureMask[i] = 1;
+    }
+
+    // Trees with seasonal palettes (pass structureMask to avoid overlapping buildings/roads)
     const treeRenderer = new TreeRenderer();
     const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed, season, structureMask);
 

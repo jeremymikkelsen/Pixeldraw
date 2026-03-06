@@ -8,6 +8,7 @@ import { HydrologyGenerator } from '../generators/HydrologyGenerator';
 import { Season, nextSeason } from './Season';
 import { Duchy } from './Duchy';
 import { generateDuchies } from './DuchyGenerator';
+import { generateRoads, RoadSegment } from '../generators/RoadGenerator';
 
 export interface GameState {
   seed: number;
@@ -23,6 +24,9 @@ export interface GameState {
   // Political
   duchies: Duchy[];
   regionToDuchy: Int8Array;
+
+  // Infrastructure
+  roads: RoadSegment[];
 }
 
 /**
@@ -33,6 +37,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
   const topo = new TopographyGenerator(mapSize, seed);
   const hydro = new HydrologyGenerator(topo, seed);
   const { duchies, regionToDuchy } = generateDuchies(topo, hydro, seed);
+  const roads = generateRoads(topo, hydro, duchies);
 
   return {
     seed,
@@ -44,6 +49,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
     hydro,
     duchies,
     regionToDuchy,
+    roads,
   };
 }
 

@@ -54,9 +54,10 @@ const STACK_HIGHLIGHT = 0x989088;
 // ---------------------------------------------------------------------------
 export interface CoastalPixel {
   idx: number;
-  type: 'sparkle' | 'wave';
+  type: 'sparkle' | 'wave' | 'shorewave';
   phase: number;    // animation phase offset
   intensity: number; // 0-1, how strong the effect is
+  dist: number;     // distance from land (for shore wave rolling)
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +259,7 @@ export class CoastalRenderer {
             type: 'sparkle',
             phase: beachNoise(wx * 0.02, wy * 0.02) * 20 + px * 0.1 + py * 0.1,
             intensity: 0.3 + rng() * 0.7,
+            dist: 0,
           });
           this._baseColors.set(i, pixels[i]);
         }
@@ -282,6 +284,7 @@ export class CoastalRenderer {
               type: 'wave',
               phase: beachNoise(wx * 0.01, wy * 0.01) * 15 + px * 0.2 + py * 0.15,
               intensity: 0.4 + rng() * 0.5,
+              dist: 0,
             });
             if (!this._baseColors.has(i)) {
               this._baseColors.set(i, pixels[i]);
@@ -308,11 +311,14 @@ export class CoastalRenderer {
         const wy = (py + 0.5) * scale;
         const waveIntensity = 1.0 - dist / WAVE_ZONE;
 
+        // Shore waves: use coastline-local noise for phase offset so
+        // nearby shore pixels share the same wave cycle
         this._animatedPixels.push({
           idx: i,
-          type: 'wave',
-          phase: beachNoise(wx * 0.015, wy * 0.015) * 10 + px * 0.3 + py * 0.3,
+          type: 'shorewave',
+          phase: beachNoise(wx * 0.008, wy * 0.008) * 4,
           intensity: waveIntensity,
+          dist,
         });
         if (!this._baseColors.has(i)) {
           this._baseColors.set(i, pixels[i]);
@@ -361,10 +367,29 @@ export class CoastalRenderer {
           pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }
       } else if (cp.type === 'wave') {
+        // Open-ocean whitecaps: simple flicker
         const wave = Math.sin(cp.phase - timeSec * waveSpeed);
         const threshold = 0.6 - cp.intensity * 0.3;
         if (wave > threshold) {
           const bright = wave > threshold + 0.2;
+          pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
+        } else {
+          pixels[outIdx] = this._baseColors.get(cp.idx)!;
+        }
+      } else if (cp.type === 'shorewave') {
+        // Rolling shore waves: a foam line sweeps in toward land, then recedes
+        // dist=0 is at the shore, higher dist = further out
+        // The "wavefront" position oscillates between 0 and WAVE_ZONE
+        const cycle = timeSec * 0.4 + cp.phase; // slow cycle with local offset
+        const waveFront = (Math.sin(cycle) + 1) / 2; // 0..1 oscillating position
+        const waveDist = waveFront * 6; // position in pixel distance from shore
+
+        // How close is this pixel to the wavefront?
+        const distToFront = Math.abs(cp.dist - waveDist);
+
+        if (distToFront < 1.5) {
+          // In the foam band (1.5px wide)
+          const bright = distToFront < 0.6;
           pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
         } else {
           pixels[outIdx] = this._baseColors.get(cp.idx)!;
@@ -446,6 +471,7 @@ export class CoastalRenderer {
               type: 'wave',
               phase: noise(wx * 0.02, wy * 0.02) * 8 + sx * 0.2 + sy * 0.2,
               intensity: 0.7 + rng() * 0.3,
+              dist: 0,
             });
             if (!this._baseColors.has(si)) {
               this._baseColors.set(si, pixels[si]);

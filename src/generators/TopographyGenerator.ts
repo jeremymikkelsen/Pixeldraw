@@ -191,7 +191,7 @@ export class TopographyGenerator {
       const dy = Math.abs(wy - halfTotal) / halfTotal;
       const dist = Math.max(dx, dy);
       const maskNoise = (noise(nx * 1.5, ny * 1.5) + 1) / 2;
-      const islandMask = 1 - Math.pow(dist * (1.15 - 0.25 * maskNoise), 2.5);
+      const islandMask = 1 - Math.pow(dist * (1.30 - 0.25 * maskNoise), 2.5);
 
       let e = Math.max(0, Math.min(1, normalised * 0.45 + islandMask * 0.55));
 

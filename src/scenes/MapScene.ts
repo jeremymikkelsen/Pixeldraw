@@ -6,7 +6,7 @@ import { CoastalRenderer } from '../generators/CoastalRenderer';
 import { MountainRenderer } from '../generators/MountainRenderer';
 import { RiverDeltaRenderer } from '../generators/RiverDeltaRenderer';
 import { GameState, createGameState } from '../state/GameState';
-import { renderDuchies } from '../renderers/DuchyRenderer';
+import { renderDuchies, renderDuchyBordersOnTop } from '../renderers/DuchyRenderer';
 import { UIManager } from '../ui/UIManager';
 import { SetupScreen } from '../ui/SetupScreen';
 
@@ -471,6 +471,11 @@ export class MapScene extends Phaser.Scene {
     // Coastal animation
     coastalRenderer.extrusionMap = mountainRenderer.extrusionMap;
     coastalRenderer.animate(pixels, 0);
+
+    // Duchy borders on the very top (over trees, mountains, everything)
+    if (renderer.regionGrid) {
+      renderDuchyBordersOnTop(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION, mountainRenderer.extrusionMap);
+    }
 
     // Store refs
     this._pixels = pixels;

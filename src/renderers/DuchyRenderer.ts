@@ -99,3 +99,64 @@ export function renderDuchies(
     }
   }
 }
+
+/**
+ * Draw duchy borders on the very top layer, after all rendering (trees, mountains, etc.).
+ * Accounts for mountain extrusion so borders appear at correct screen positions.
+ */
+export function renderDuchyBordersOnTop(
+  pixels: Uint32Array,
+  regionGrid: Uint16Array,
+  state: GameState,
+  resolution: number,
+  extrusionMap: Int16Array | null,
+): void {
+  const N = resolution;
+  const { regionToDuchy, duchies } = state;
+
+  const duchyR = new Uint8Array(duchies.length);
+  const duchyG = new Uint8Array(duchies.length);
+  const duchyB = new Uint8Array(duchies.length);
+  for (let d = 0; d < duchies.length; d++) {
+    const c = duchies[d].house.color;
+    duchyR[d] = (c >> 16) & 0xff;
+    duchyG[d] = (c >> 8) & 0xff;
+    duchyB[d] = c & 0xff;
+  }
+
+  for (let py = 1; py < N - 1; py++) {
+    for (let px = 1; px < N - 1; px++) {
+      const i = py * N + px;
+      const region = regionGrid[i];
+      const duchyIdx = regionToDuchy[region];
+      if (duchyIdx < 0) continue;
+
+      // Check 4 neighbors for different duchy
+      let isBorder = false;
+      const neighbors = [i - 1, i + 1, i - N, i + N];
+      for (const ni of neighbors) {
+        const nRegion = regionGrid[ni];
+        const nDuchy = regionToDuchy[nRegion];
+        if (nDuchy !== duchyIdx) {
+          isBorder = true;
+          break;
+        }
+      }
+
+      if (isBorder) {
+        // Map source pixel to screen position (accounting for mountain extrusion)
+        let screenY = py;
+        if (extrusionMap) {
+          screenY = py - extrusionMap[i];
+        }
+        if (screenY < 0 || screenY >= N) continue;
+
+        const outIdx = screenY * N + px;
+        const dr = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyR[duchyIdx] * BORDER_BRIGHTEN)));
+        const dg = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyG[duchyIdx] * BORDER_BRIGHTEN)));
+        const db = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyB[duchyIdx] * BORDER_BRIGHTEN)));
+        pixels[outIdx] = (255 << 24) | (db << 16) | (dg << 8) | dr;
+      }
+    }
+  }
+}

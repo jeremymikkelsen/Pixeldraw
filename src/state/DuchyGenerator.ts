@@ -172,16 +172,62 @@ function _tryGenerate(
     }
   }
 
-  // Deduplicate seeds
+  // Enforce minimum separation (~20 tiles) between seeds.
+  // Approximate tile size from land extent and region count.
+  const landW = landMaxX - landMinX;
+  const landH = landMaxY - landMinY;
+  const approxTileSize = Math.sqrt((landW * landH) / Math.max(1, landRegions.length));
+  const minSeedDist = approxTileSize * 20;
+  const minSeedDist2 = minSeedDist * minSeedDist;
+
+  // Deduplicate seeds and enforce minimum distance
   const usedSeeds = new Set<number>();
   for (let i = 0; i < seeds.length; i++) {
-    if (usedSeeds.has(seeds[i])) {
-      const neighbors = adj[seeds[i]];
-      for (const n of neighbors) {
-        if (isLand[n] && !usedSeeds.has(n)) {
-          seeds[i] = n;
-          break;
+    // Check if too close to any previously accepted seed
+    let tooClose = usedSeeds.has(seeds[i]);
+    if (!tooClose) {
+      const pi = mesh.points[seeds[i]];
+      for (let j = 0; j < i; j++) {
+        const pj = mesh.points[seeds[j]];
+        const d2 = (pi.x - pj.x) ** 2 + (pi.y - pj.y) ** 2;
+        if (d2 < minSeedDist2) { tooClose = true; break; }
+      }
+    }
+
+    if (tooClose) {
+      // Try to find a replacement: search land regions far enough from all prior seeds
+      let bestR = -1;
+      let bestScore = Infinity;
+      const targetX = landMinX + ((i % gridCols) + 0.5) * cellW;
+      const targetY = landMinY + (Math.floor(i / gridCols) + 0.5) * cellH;
+
+      for (const r of landRegions) {
+        if (usedSeeds.has(r)) continue;
+        const p = mesh.points[r];
+
+        // Must be far enough from all prior seeds
+        let farEnough = true;
+        for (let j = 0; j < i; j++) {
+          const pj = mesh.points[seeds[j]];
+          if ((p.x - pj.x) ** 2 + (p.y - pj.y) ** 2 < minSeedDist2) {
+            farEnough = false;
+            break;
+          }
         }
+        if (!farEnough) continue;
+
+        const dx = p.x - targetX;
+        const dy = p.y - targetY;
+        const rDist = riverDist[r] === Infinity ? 20 : riverDist[r];
+        const score = Math.sqrt(dx * dx + dy * dy) + rDist * 80;
+        if (score < bestScore) {
+          bestScore = score;
+          bestR = r;
+        }
+      }
+
+      if (bestR >= 0) {
+        seeds[i] = bestR;
       }
     }
     usedSeeds.add(seeds[i]);

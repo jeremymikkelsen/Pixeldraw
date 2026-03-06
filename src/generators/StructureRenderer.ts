@@ -55,9 +55,10 @@ const M = 9;  // smoke
 // ---------------------------------------------------------------------------
 type SpriteTemplate = { w: number; h: number; data: number[]; anchorY: number };
 
-// Small cottage 3/4 (9×9)
+// Small cottage 3/4 (9×10)
 const COTTAGE_SMALL: SpriteTemplate = {
-  w: 9, h: 9, anchorY: 8, data: [
+  w: 9, h: 10, anchorY: 9, data: [
+    _, _, _, M, _, _, _, _, _,
     _, _, _, K, M, _, _, _, _,
     _, _, R, R, R, R, _, _, _,
     _, R, R, R, R, R, R, _, _,
@@ -70,9 +71,10 @@ const COTTAGE_SMALL: SpriteTemplate = {
   ],
 };
 
-// Medium cottage 3/4 (10×10)
+// Medium cottage 3/4 (10×11)
 const COTTAGE_MEDIUM: SpriteTemplate = {
-  w: 10, h: 10, anchorY: 9, data: [
+  w: 10, h: 11, anchorY: 10, data: [
+    _, _, _, _, M, _, _, _, _, _,
     _, _, _, K, M, _, _, _, _, _,
     _, _, R, R, R, R, R, _, _, _,
     _, R, R, R, R, R, R, R, _, _,
@@ -623,16 +625,16 @@ export class StructureRenderer {
 
         const idx = py * N + px;
 
-        // Smoke: alpha-blend light gray wisps
+        // Smoke: alpha-blend white wisps
         if (cell === M) {
           const existing = pixels[idx];
           const er = existing & 0xff;
           const eg = (existing >> 8) & 0xff;
           const eb = (existing >> 16) & 0xff;
-          const alpha = 0.30;
-          const nr = Math.round(er + (0xcc - er) * alpha);
-          const ng = Math.round(eg + (0xc8 - eg) * alpha);
-          const nb = Math.round(eb + (0xc0 - eb) * alpha);
+          const alpha = 0.55;
+          const nr = Math.round(er + (0xe8 - er) * alpha);
+          const ng = Math.round(eg + (0xe4 - eg) * alpha);
+          const nb = Math.round(eb + (0xe0 - eb) * alpha);
           pixels[idx] = (255 << 24) | (nb << 16) | (ng << 8) | nr;
           continue;
         }

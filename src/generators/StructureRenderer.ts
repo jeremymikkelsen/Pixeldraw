@@ -18,6 +18,7 @@ import { HydrologyGenerator } from './HydrologyGenerator';
 import { packABGR } from './TerrainPalettes';
 import { Season } from '../state/Season';
 import type { Duchy } from '../state/Duchy';
+import type { LoadedSprite } from './SpriteLoader';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -399,12 +400,14 @@ export class StructureRenderer {
 
   /**
    * Phase 2: Render shadows + sprites into pixels.
+   * If manorSprite is provided, capital buildings use the loaded PNG directly.
    */
   renderSprites(
     pixels: Uint32Array,
     resolution: number,
     structures: StructureInstance[],
     season: Season = Season.Summer,
+    manorSprite?: LoadedSprite,
   ): void {
     const palette = getPalette(season);
 
@@ -412,7 +415,11 @@ export class StructureRenderer {
       this._stampShadow(pixels, resolution, s);
     }
     for (const s of structures) {
-      this._stampSprite(pixels, resolution, s, palette);
+      if (s.isCapital && manorSprite) {
+        this._stampLoadedSprite(pixels, resolution, s, manorSprite);
+      } else {
+        this._stampSprite(pixels, resolution, s, palette);
+      }
     }
   }
 
@@ -643,6 +650,57 @@ export class StructureRenderer {
         const g = (color >> 8) & 0xff;
         const b = color & 0xff;
         pixels[idx] = packABGR(r, g, b);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Stamp a loaded PNG sprite (for manor replacement)
+  // -----------------------------------------------------------------------
+  private _stampLoadedSprite(
+    pixels: Uint32Array, N: number,
+    s: StructureInstance,
+    sprite: LoadedSprite,
+  ): void {
+    const { px: tx, py: ty, flipped } = s;
+    const { w, h, pixels: srcPixels } = sprite;
+
+    const startX = tx - Math.floor(w / 2);
+    const startY = ty - h + Math.floor(h * 0.15); // anchor near bottom
+
+    for (let sy = 0; sy < h; sy++) {
+      for (let sx = 0; sx < w; sx++) {
+        const srcX = flipped ? (w - 1 - sx) : sx;
+        const srcIdx = sy * w + srcX;
+        const abgr = srcPixels[srcIdx];
+
+        // Skip fully transparent pixels
+        const alpha = (abgr >>> 24) & 0xff;
+        if (alpha < 10) continue;
+
+        const px = startX + sx;
+        const py = startY + sy;
+        if (px < 0 || px >= N || py < 0 || py >= N) continue;
+
+        const dstIdx = py * N + px;
+
+        // Alpha-blend if semi-transparent
+        if (alpha < 245) {
+          const a = alpha / 255;
+          const sr = abgr & 0xff;
+          const sg = (abgr >> 8) & 0xff;
+          const sb = (abgr >> 16) & 0xff;
+          const dst = pixels[dstIdx];
+          const dr = dst & 0xff;
+          const dg = (dst >> 8) & 0xff;
+          const db = (dst >> 16) & 0xff;
+          const nr = Math.round(sr * a + dr * (1 - a));
+          const ng = Math.round(sg * a + dg * (1 - a));
+          const nb = Math.round(sb * a + db * (1 - a));
+          pixels[dstIdx] = (255 << 24) | (nb << 16) | (ng << 8) | nr;
+        } else {
+          pixels[dstIdx] = abgr;
+        }
       }
     }
   }

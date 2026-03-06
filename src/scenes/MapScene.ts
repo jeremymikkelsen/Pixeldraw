@@ -10,6 +10,7 @@ import { GameState, createGameState } from '../state/GameState';
 import { renderDuchies, renderDuchyBordersOnTop } from '../renderers/DuchyRenderer';
 import { UIManager } from '../ui/UIManager';
 import { SetupScreen } from '../ui/SetupScreen';
+import { loadSprite, type LoadedSprite } from '../generators/SpriteLoader';
 
 const MAP_SIZE = 3072;
 const PIXEL_RESOLUTION = 1536;
@@ -59,6 +60,9 @@ export class MapScene extends Phaser.Scene {
   // Game state + UI
   private _state!: GameState;
   private _ui!: UIManager;
+
+  // Pre-loaded manor sprite (from PNG)
+  private _manorSprite: LoadedSprite | null = null;
 
   constructor() {
     super({ key: 'MapScene' });
@@ -142,6 +146,17 @@ export class MapScene extends Phaser.Scene {
     if (this._setupScreen) {
       this._setupScreen.destroy();
     }
+
+    // Ensure manor sprite is loaded before first render
+    if (!this._manorSprite) {
+      try {
+        this._manorSprite = await loadSprite('/sprites/manor.png');
+        console.log('[Sprite] Manor loaded:', this._manorSprite.w, '×', this._manorSprite.h);
+      } catch (e) {
+        console.warn('[Sprite] Failed to load manor sprite, using fallback templates', e);
+      }
+    }
+
     this._setupScreen = new SetupScreen();
     const result = await this._setupScreen.show();
     this._playerHouse = result.selectedHouse;
@@ -486,7 +501,7 @@ export class MapScene extends Phaser.Scene {
     }
 
     // Structures on top of duchy borders (3/4 perspective with ground shadows)
-    structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season);
+    structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprite ?? undefined);
 
     // Store refs
     this._pixels = pixels;

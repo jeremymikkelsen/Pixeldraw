@@ -91,134 +91,87 @@ const COTTAGE_MEDIUM: SpriteTemplate = {
 const COTTAGE_TEMPLATES: SpriteTemplate[] = [COTTAGE_SMALL, COTTAGE_MEDIUM];
 
 // ---------------------------------------------------------------------------
-// Procedural manor generation — fills a Voronoi cell
+// Manor templates — hand-crafted at 3 sizes for clean pixel art
 // ---------------------------------------------------------------------------
 
-/**
- * Generate a manor sprite template sized to fill its region cell.
- * targetW / targetH come from the cell's pixel-space bounding box.
- * rng provides variation in chimney placement and window layout.
- */
-function generateManor(targetW: number, targetH: number, rng: () => number): SpriteTemplate {
-  // Clamp to reasonable bounds
-  const tw = Math.max(12, Math.min(40, targetW));
-  const th = Math.max(12, Math.min(40, targetH));
+// Small manor 3/4 (13×13) — chimney on left
+const MANOR_SMALL: SpriteTemplate = {
+  w: 13, h: 13, anchorY: 12, data: [
+    _, _, _, _, M, _, _, _, _, _, _, _, _,
+    _, _, _, K, M, _, _, _, _, _, _, _, _,
+    _, _, _, R, R, R, R, R, _, _, _, _, _,
+    _, _, R, R, R, R, R, R, R, _, _, _, _,
+    _, R, R, R, R, R, R, R, R, R, _, _, _,
+    _, R, R, R, R, R, R, R, R, R, _, _, _,
+    _, W, W, N, W, W, N, W, E, E, E, _, _,
+    _, W, W, W, W, W, W, W, E, E, E, _, _,
+    _, W, W, W, D, W, W, W, E, E, E, _, _,
+    _, S, S, S, S, S, S, S, S, S, S, _, _,
+    _, _, P, P, P, P, P, P, P, P, _, _, _,
+    _, _, _, P, P, P, P, P, P, _, _, _, _,
+    _, _, _, _, P, P, P, P, _, _, _, _, _,
+  ],
+};
 
-  // Side wall depth (3/4 perspective)
-  const sideW = Math.max(2, Math.round(tw * 0.2));
-  // Front wall width (excluding side)
-  const frontW = tw - sideW - 2; // -2 for left/right margin
-  // Roof rows and wall rows
-  const wallRows = Math.max(3, Math.round(th * 0.22));
-  const roofRows = Math.max(3, Math.round(th * 0.35));
-  const foundationRows = 1;
-  const porchRows = Math.max(2, Math.round(th * 0.15));
-  const smokeRows = 2;
+// Medium manor 3/4 (15×15) — chimney on right, wider front
+const MANOR_MEDIUM: SpriteTemplate = {
+  w: 15, h: 15, anchorY: 14, data: [
+    _, _, _, _, _, _, _, _, _, M, _, _, _, _, _,
+    _, _, _, _, _, _, _, _, K, M, _, _, _, _, _,
+    _, _, _, _, R, R, R, R, R, R, R, _, _, _, _,
+    _, _, _, R, R, R, R, R, R, R, R, R, _, _, _,
+    _, _, R, R, R, R, R, R, R, R, R, R, _, _, _,
+    _, R, R, R, R, R, R, R, R, R, R, R, R, _, _,
+    _, R, R, R, R, R, R, R, R, R, R, R, R, _, _,
+    _, W, W, N, W, W, N, W, W, N, E, E, E, _, _,
+    _, W, W, W, W, W, W, W, W, W, E, E, E, _, _,
+    _, W, W, W, W, D, W, W, W, W, E, E, E, _, _,
+    _, S, S, S, S, S, S, S, S, S, S, S, S, _, _,
+    _, _, P, P, P, P, P, P, P, P, P, P, _, _, _,
+    _, _, _, P, P, P, P, P, P, P, P, _, _, _, _,
+    _, _, _, _, P, P, P, P, P, P, _, _, _, _, _,
+    _, _, _, _, _, P, P, P, P, _, _, _, _, _, _,
+  ],
+};
 
-  const totalH = smokeRows + roofRows + wallRows + foundationRows + porchRows;
-  const w = tw;
-  const data: number[] = new Array(w * totalH).fill(_);
+// Large manor 3/4 (18×17) — two chimneys, grand facade
+const MANOR_LARGE: SpriteTemplate = {
+  w: 18, h: 17, anchorY: 16, data: [
+    _, _, _, _, _, _, _, _, _, _, M, _, _, _, _, _, _, _,
+    _, _, _, _, _, K, R, R, R, K, M, _, _, _, _, _, _, _,
+    _, _, _, _, R, R, R, R, R, R, R, R, _, _, _, _, _, _,
+    _, _, _, R, R, R, R, R, R, R, R, R, R, _, _, _, _, _,
+    _, _, R, R, R, R, R, R, R, R, R, R, R, R, _, _, _, _,
+    _, R, R, R, R, R, R, R, R, R, R, R, R, R, R, _, _, _,
+    _, R, R, R, R, R, R, R, R, R, R, R, R, R, R, _, _, _,
+    _, W, W, N, W, W, N, W, W, N, W, W, E, E, E, E, _, _,
+    _, W, W, W, W, W, W, W, W, W, W, W, E, E, E, E, _, _,
+    _, W, W, W, W, W, W, D, W, W, W, W, E, E, E, E, _, _,
+    _, S, S, S, S, S, S, S, S, S, S, S, S, S, S, S, _, _,
+    _, _, P, P, P, P, P, P, P, P, P, P, P, P, P, _, _, _,
+    _, _, _, P, P, P, P, P, P, P, P, P, P, P, _, _, _, _,
+    _, _, _, _, P, P, P, P, P, P, P, P, P, _, _, _, _, _,
+    _, _, _, _, _, P, P, P, P, P, P, P, _, _, _, _, _, _,
+    _, _, _, _, _, _, P, P, P, P, P, _, _, _, _, _, _, _,
+    _, _, _, _, _, _, _, P, P, P, _, _, _, _, _, _, _, _,
+  ],
+};
 
-  const set = (row: number, col: number, val: number) => {
-    if (row >= 0 && row < totalH && col >= 0 && col < w) {
-      data[row * w + col] = val;
-    }
-  };
+const MANOR_TEMPLATES: SpriteTemplate[] = [MANOR_SMALL, MANOR_MEDIUM, MANOR_LARGE];
 
-  // Layout column ranges
-  const leftMargin = 1;
-  const frontLeft = leftMargin;
-  const frontRight = frontLeft + frontW - 1;
-  const sideLeft = frontRight + 1;
-  const sideRight = sideLeft + sideW - 1;
-
-  let row = 0;
-
-  // --- Chimney + smoke (2 rows) ---
-  // Place 1-2 chimneys with smoke
-  const chimney1X = frontLeft + Math.floor(frontW * 0.3) + Math.floor(rng() * 2);
-  const chimney2X = (frontW > 6) ? frontLeft + Math.floor(frontW * 0.7) + Math.floor(rng() * 2) : -1;
-  for (let sr = 0; sr < smokeRows; sr++) {
-    // Smoke above chimneys
-    if (sr === 0) {
-      set(row, chimney1X, M);
-      if (chimney2X > 0) set(row, chimney2X, M);
-    } else {
-      set(row, chimney1X, K);
-      set(row, chimney1X + 1, M);
-      if (chimney2X > 0) {
-        set(row, chimney2X, K);
-        set(row, chimney2X + 1, M);
-      }
-    }
-    row++;
+/** Pick a manor template based on cell size + rng for variation. */
+function pickManor(cellW: number, cellH: number, rng: () => number): SpriteTemplate {
+  const cellDim = Math.min(cellW, cellH);
+  // Pick size based on cell, with some random variation
+  let idx: number;
+  if (cellDim >= 20) {
+    idx = rng() < 0.4 ? 2 : 1;    // large or medium
+  } else if (cellDim >= 15) {
+    idx = rng() < 0.5 ? 1 : 0;    // medium or small
+  } else {
+    idx = rng() < 0.3 ? 1 : 0;    // mostly small
   }
-
-  // --- Roof (expanding trapezoid) ---
-  for (let rr = 0; rr < roofRows; rr++) {
-    const t = rr / (roofRows - 1); // 0 at peak, 1 at eave
-    // Roof expands from narrow peak to full width
-    const roofLeft = Math.round(frontLeft + (1 - t) * (frontW * 0.35));
-    const roofRight = Math.round(sideRight - (1 - t) * (sideW * 0.5));
-    for (let c = roofLeft; c <= roofRight; c++) {
-      set(row, c, R);
-    }
-    row++;
-  }
-
-  // --- Front wall + side wall ---
-  // Decide window positions
-  const windowSpacing = Math.max(2, Math.floor(frontW / 3));
-  const windowCols: number[] = [];
-  for (let c = frontLeft + 2; c <= frontRight - 1; c += windowSpacing) {
-    windowCols.push(c);
-  }
-  // Door position (center of front wall, bottom row of wall)
-  const doorCol = frontLeft + Math.floor(frontW / 2);
-
-  for (let wr = 0; wr < wallRows; wr++) {
-    // Front wall
-    for (let c = frontLeft; c <= frontRight; c++) {
-      if (wr === wallRows - 1 && c === doorCol) {
-        set(row, c, D);
-      } else if (wr < wallRows - 1 && windowCols.includes(c)) {
-        set(row, c, N);
-      } else {
-        set(row, c, W);
-      }
-    }
-    // Side wall
-    for (let c = sideLeft; c <= sideRight; c++) {
-      set(row, c, E);
-    }
-    row++;
-  }
-
-  // --- Stone foundation ---
-  for (let fr = 0; fr < foundationRows; fr++) {
-    for (let c = frontLeft; c <= sideRight; c++) {
-      set(row, c, S);
-    }
-    row++;
-  }
-
-  // --- Porch (tapering) ---
-  for (let pr = 0; pr < porchRows; pr++) {
-    const inset = pr;
-    const pLeft = frontLeft + inset;
-    const pRight = sideRight - inset;
-    if (pLeft > pRight) break;
-    for (let c = pLeft; c <= pRight; c++) {
-      set(row, c, P);
-    }
-    row++;
-  }
-
-  // Trim unused rows
-  const actualH = row;
-  const trimmed = data.slice(0, actualH * w);
-
-  return { w, h: actualH, data: trimmed, anchorY: actualH - 1 };
+  return MANOR_TEMPLATES[idx];
 }
 
 // ---------------------------------------------------------------------------
@@ -349,9 +302,9 @@ export class StructureRenderer {
       const cellW = Math.round(maxPx - minPx);
       const cellH = Math.round(maxPy - minPy);
 
-      // Generate a unique manor for this cell
+      // Pick a manor template based on cell size with random variation
       const manorRng = mulberry32(seed ^ (cr * 0x9E3779B9));
-      const template = generateManor(cellW, cellH, manorRng);
+      const template = pickManor(cellW, cellH, manorRng);
 
       structures.push({
         px,

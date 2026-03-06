@@ -20,7 +20,7 @@ function getSnowLine(season: Season): number {
   switch (season) {
     case Season.Winter: return 0.38;  // snow much lower
     case Season.Spring: return 0.52;  // snow retreating
-    case Season.Fall:   return 0.55;  // early snow
+    case Season.Fall:   return 0.68;  // less snow than summer — late dry season
     default:            return SNOW_LINE_DEFAULT;
   }
 }
@@ -29,7 +29,7 @@ function getRockLine(season: Season): number {
   switch (season) {
     case Season.Winter: return 0.32;  // rock exposed lower
     case Season.Spring: return 0.42;
-    case Season.Fall:   return 0.44;
+    case Season.Fall:   return 0.52;  // more exposed rock, less snow
     default:            return ROCK_LINE_DEFAULT;
   }
 }

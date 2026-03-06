@@ -175,18 +175,18 @@ export class GroundRenderer {
           }
         }
 
-        // 3. Winter snow coverage on land (elevation-dependent)
+        // 3. Winter snow coverage on land — blanket coverage with sparse green patches
         if (season === Season.Winter && terrain !== 'ocean' && terrain !== 'water') {
-          const elev = elevationGrid[i];
-          // Snow coverage: 100% above 0.35, gradient 0.15-0.35, sparse below
-          const snowChance = elev > 0.35 ? 1.0 : elev > 0.15 ? (elev - 0.15) / 0.20 : 0.15;
           const dn2 = detailNoise(wx * 0.04, wy * 0.04);
-          if (dn2 * 0.5 + 0.5 < snowChance) {
-            // Blend toward snow white based on elevation
+          const dn3 = detailNoise(wx * 0.12, wy * 0.12);
+          // ~90% snow everywhere; only sparse low-frequency noise patches show ground
+          const greenPatch = (dn2 > 0.6 && dn3 > 0.3); // ~8% of pixels stay green
+          if (!greenPatch) {
             let r = (baseRGB >> 16) & 0xff;
             let g = (baseRGB >> 8) & 0xff;
             let b = baseRGB & 0xff;
-            const snowBlend = Math.min(1, snowChance * 0.7 + 0.2);
+            // High blend — almost pure snow white
+            const snowBlend = 0.85 + dn2 * 0.08;
             r = Math.floor(r + (0xe0 - r) * snowBlend);
             g = Math.floor(g + (0xe8 - g) * snowBlend);
             b = Math.floor(b + (0xf0 - b) * snowBlend);

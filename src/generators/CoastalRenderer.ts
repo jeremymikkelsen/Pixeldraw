@@ -242,7 +242,7 @@ export class CoastalRenderer {
     // ----------------------------------------------------------------
     // Collect ocean sparkle pixels
     // ----------------------------------------------------------------
-    const SPARKLE_DENSITY = 0.004; // fraction of ocean pixels that sparkle
+    const SPARKLE_DENSITY = season === Season.Winter ? 0.008 : 0.004;
 
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
@@ -265,9 +265,36 @@ export class CoastalRenderer {
     }
 
     // ----------------------------------------------------------------
+    // Winter whitecaps: wave-type pixels scattered across open ocean
+    // ----------------------------------------------------------------
+    if (season === Season.Winter) {
+      const WHITECAP_DENSITY = 0.006;
+      for (let py = 0; py < N; py++) {
+        for (let px = 0; px < N; px++) {
+          const i = py * N + px;
+          if (!isOcean[i]) continue;
+          if (landDist[i] <= 6) continue; // not near shore, those get regular waves
+          if (rng() < WHITECAP_DENSITY) {
+            const wx = (px + 0.5) * scale;
+            const wy = (py + 0.5) * scale;
+            this._animatedPixels.push({
+              idx: i,
+              type: 'wave',
+              phase: beachNoise(wx * 0.01, wy * 0.01) * 15 + px * 0.2 + py * 0.15,
+              intensity: 0.4 + rng() * 0.5,
+            });
+            if (!this._baseColors.has(i)) {
+              this._baseColors.set(i, pixels[i]);
+            }
+          }
+        }
+      }
+    }
+
+    // ----------------------------------------------------------------
     // Collect wave pixels (ocean pixels near shore)
     // ----------------------------------------------------------------
-    const WAVE_ZONE = 4; // how far from shore waves appear
+    const WAVE_ZONE = season === Season.Winter ? 6 : 4; // wider wave zone in winter
 
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {

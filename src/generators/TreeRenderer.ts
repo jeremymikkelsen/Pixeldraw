@@ -470,9 +470,10 @@ export class TreeRenderer {
     const treeMask = new Uint8Array(N * N);
 
     // ------------------------------------------------------------------
-    // 6. Shadow pass
+    // 6. Shadow pass (skip bare winter deciduous — no leaf canopy to cast shadow)
     // ------------------------------------------------------------------
     for (const tree of trees) {
+      if (tree.season === Season.Winter && !tree.isConifer) continue;
       this._stampShadow(pixels, N, tree);
     }
 
@@ -622,11 +623,20 @@ export class TreeRenderer {
         const py = startY + sy;
         if (px < 0 || px >= N || py < 0 || py >= N) continue;
 
-        // Winter deciduous: skip most canopy pixels for bare-branch look
+        // Winter deciduous: sparse canopy → bare branches
         if (isBareSeason && cell === C) {
-          // Keep pixels near the vertical center (trunk line) as branches
           const distFromCenter = Math.abs(srcX - Math.floor(w / 2));
-          if (distFromCenter > 1 || ((tx + sy * 7) & 3) !== 0) continue;
+          // Keep trunk-adjacent pixels (branches) and scattered outer twigs
+          if (distFromCenter <= 1) {
+            // Near trunk: keep ~50% as main branches
+            if (((tx + sy * 7) & 1) !== 0) continue;
+          } else if (distFromCenter <= 2) {
+            // Mid-range: keep ~25% as smaller branches
+            if (((tx * 3 + sy * 5) & 3) !== 0) continue;
+          } else {
+            // Outer: skip all — no leaves out here
+            continue;
+          }
         }
 
         let color: number;

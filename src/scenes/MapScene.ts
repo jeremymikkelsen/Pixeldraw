@@ -71,8 +71,14 @@ export class MapScene extends Phaser.Scene {
     this._ui = new UIManager();
     this._ui.onTurnAdvanced = () => {
       console.log(`[Turn] Year ${this._state.year}, ${this._state.season}`);
-      this._renderMap();
-      this._ui.setState(this._state, this._regionGrid!);
+      const cam = this.cameras.main;
+      // Fade to black, re-render, then fade back in
+      cam.fadeOut(400, 0, 0, 0);
+      cam.once('camerafadeoutcomplete', () => {
+        this._renderMap();
+        this._ui.setState(this._state, this._regionGrid!);
+        cam.fadeIn(400, 0, 0, 0);
+      });
     };
 
     // Camera setup

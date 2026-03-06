@@ -73,7 +73,7 @@ export class TopographyGenerator {
     const numRegions = this.mesh.numRegions;
 
     // Spatial grid for fast nearest-region lookup
-    const cellSize = 80;
+    const cellSize = 40;
     const gridW = Math.ceil(this.size / cellSize);
     const grid: number[][] = new Array(gridW * gridW);
     for (let i = 0; i < grid.length; i++) grid[i] = [];
@@ -135,8 +135,8 @@ export class TopographyGenerator {
 
     const pds = new PoissonDiskSampling({
       shape: [this.size, this.size],
-      minDistance: 56,
-      maxDistance: 112,
+      minDistance: 28,
+      maxDistance: 56,
       tries: 20,
     }, rng);
 
@@ -146,7 +146,7 @@ export class TopographyGenerator {
     // Add a ring of ghost points just outside the canvas so that all
     // interior Voronoi cells are fully enclosed (no clipped/open polygons).
     const boundary: Point[] = [];
-    const step = 72;
+    const step = 36;
     const pad = -step / 2;
     const far = this.size + step / 2;
     for (let v = pad; v <= far; v += step) {

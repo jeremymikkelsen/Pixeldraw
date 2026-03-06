@@ -472,7 +472,7 @@ export class TreeRenderer {
     // ------------------------------------------------------------------
     // 1. Spatial grid for nearest-region lookup (same as GroundRenderer)
     // ------------------------------------------------------------------
-    const cellSize = 80;
+    const cellSize = 40;
     const gridW = Math.ceil(topo.size / cellSize);
     const grid: number[][] = new Array(gridW * gridW);
     for (let i = 0; i < grid.length; i++) grid[i] = [];

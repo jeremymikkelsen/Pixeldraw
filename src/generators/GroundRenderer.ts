@@ -45,7 +45,7 @@ export class GroundRenderer {
     // ------------------------------------------------------------------
     // Spatial grid for nearest-region lookup
     // ------------------------------------------------------------------
-    const cellSize = 80;
+    const cellSize = 40;
     const gridW = Math.ceil(size / cellSize);
     const grid: number[][] = new Array(gridW * gridW);
     for (let i = 0; i < grid.length; i++) grid[i] = [];

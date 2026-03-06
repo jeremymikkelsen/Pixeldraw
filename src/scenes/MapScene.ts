@@ -8,6 +8,7 @@ import { RiverDeltaRenderer } from '../generators/RiverDeltaRenderer';
 import { GameState, createGameState } from '../state/GameState';
 import { renderDuchies } from '../renderers/DuchyRenderer';
 import { UIManager } from '../ui/UIManager';
+import { SetupScreen } from '../ui/SetupScreen';
 
 const MAP_SIZE = 3072;
 const PIXEL_RESOLUTION = 1536;
@@ -62,14 +63,15 @@ export class MapScene extends Phaser.Scene {
     super({ key: 'MapScene' });
   }
 
+  // Player's chosen house index
+  private _playerHouse = 0;
+  private _setupScreen: SetupScreen | null = null;
+
   create(): void {
     this._ui = new UIManager();
     this._ui.onTurnAdvanced = () => {
-      // For now, just log the turn advance. Future: re-render seasonal changes.
       console.log(`[Turn] ${this._state.year}, ${this._state.season}`);
     };
-
-    this._initializeGame(Date.now());
 
     // Camera setup
     const cam = this.cameras.main;
@@ -83,7 +85,7 @@ export class MapScene extends Phaser.Scene {
     this.eqKey = this.input.keyboard!.addKey(187);  // =/+ key on US keyboards
 
     this.input.keyboard!.on('keydown-SPACE', () => {
-      this._initializeGame(Date.now());
+      this._showSetupAndStart();
     });
 
     this.input.keyboard!.on('keydown-ZERO', () => {
@@ -115,13 +117,28 @@ export class MapScene extends Phaser.Scene {
     // HUD text (fixed to camera via setScrollFactor)
     const hudLabel = this._isTouchDevice
       ? 'Drag to pan · Pinch to zoom · Buttons at bottom-right'
-      : 'ARROWS scroll · +/- zoom · SPACE regenerate · 9 elevation · 0 moisture';
+      : 'ARROWS scroll · +/- zoom · SPACE new game · 9 elevation · 0 moisture';
     this.add.text(8, 40, hudLabel, {
       fontSize: '13px',
       color: '#ffffff',
       backgroundColor: '#00000088',
       padding: { x: 6, y: 4 },
     }).setDepth(10).setScrollFactor(0);
+
+    // Show setup screen on first load
+    this._showSetupAndStart();
+  }
+
+  private async _showSetupAndStart(): Promise<void> {
+    if (this._setupScreen) {
+      this._setupScreen.destroy();
+    }
+    this._setupScreen = new SetupScreen();
+    const result = await this._setupScreen.show();
+    this._playerHouse = result.selectedHouse;
+    this._initializeGame(result.seed);
+    this._setupScreen.destroy();
+    this._setupScreen = null;
   }
 
   update(time: number, delta: number): void {
@@ -237,7 +254,7 @@ export class MapScene extends Phaser.Scene {
     const btnMoisture = document.getElementById('btn-moisture');
 
     btnRegenerate?.addEventListener('click', () => {
-      this._initializeGame(Date.now());
+      this._showSetupAndStart();
     });
     btnElevation?.addEventListener('click', () => {
       this._activeOverlay = this._activeOverlay === 'elevation' ? 'none' : 'elevation';
@@ -370,7 +387,7 @@ export class MapScene extends Phaser.Scene {
    */
   private _initializeGame(seed: number): void {
     // --- Create game state ---
-    this._state = createGameState(seed, MAP_SIZE);
+    this._state = createGameState(seed, MAP_SIZE, this._playerHouse);
     const { topo, hydro, duchies } = this._state;
 
     console.log('[Game]', {

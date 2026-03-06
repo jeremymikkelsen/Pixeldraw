@@ -14,6 +14,7 @@ export interface GameState {
   turn: number;
   season: Season;
   year: number;
+  playerDuchy: number; // index into duchies[] for the player's house
 
   // Terrain (generated once, immutable after creation)
   topo: TopographyGenerator;
@@ -26,8 +27,9 @@ export interface GameState {
 
 /**
  * Create a fully initialized GameState from a seed.
+ * @param playerHouse - index into HOUSES[] for the player's chosen house
  */
-export function createGameState(seed: number, mapSize: number): GameState {
+export function createGameState(seed: number, mapSize: number, playerHouse: number = 0): GameState {
   const topo = new TopographyGenerator(mapSize, seed);
   const hydro = new HydrologyGenerator(topo, seed);
   const { duchies, regionToDuchy } = generateDuchies(topo, hydro, seed);
@@ -37,6 +39,7 @@ export function createGameState(seed: number, mapSize: number): GameState {
     turn: 0,
     season: Season.Spring,
     year: 1,
+    playerDuchy: playerHouse,
     topo,
     hydro,
     duchies,

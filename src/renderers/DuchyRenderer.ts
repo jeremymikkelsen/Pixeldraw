@@ -10,8 +10,10 @@ import { GameState } from '../state/GameState';
 
 // Blend factor for duchy territory tinting
 const TINT_ALPHA = 0.15;
-// Border color darkening factor
-const BORDER_DARKEN = 0.4;
+// Border brightness boost (1.0 = original, >1.0 = brighter)
+const BORDER_BRIGHTEN = 1.6;
+// Minimum brightness for border channels so dark colors are still visible
+const BORDER_MIN = 80;
 
 /**
  * Apply duchy territory tint and borders to an existing pixel buffer.
@@ -84,10 +86,10 @@ export function renderDuchies(
       }
 
       if (isBorder) {
-        // Draw border: darken the duchy color
-        const dr = Math.floor(duchyR[duchyIdx] * BORDER_DARKEN);
-        const dg = Math.floor(duchyG[duchyIdx] * BORDER_DARKEN);
-        const db = Math.floor(duchyB[duchyIdx] * BORDER_DARKEN);
+        // Draw border: bright saturated duchy color
+        const dr = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyR[duchyIdx] * BORDER_BRIGHTEN)));
+        const dg = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyG[duchyIdx] * BORDER_BRIGHTEN)));
+        const db = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyB[duchyIdx] * BORDER_BRIGHTEN)));
         pixels[i] = (255 << 24) | (db << 16) | (dg << 8) | dr;
       }
     }

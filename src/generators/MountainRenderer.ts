@@ -79,6 +79,7 @@ export class MountainRenderer {
 
   private _snowLine = SNOW_LINE_DEFAULT;
   private _rockLine = ROCK_LINE_DEFAULT;
+  private _season: Season = Season.Summer;
 
   render(
     pixels: Uint32Array,
@@ -90,6 +91,7 @@ export class MountainRenderer {
   ): void {
     this._snowLine = getSnowLine(season);
     this._rockLine = getRockLine(season);
+    this._season = season;
     const rngNoise = mulberry32(seed ^ 0x904e);
     const noise = createNoise2D(rngNoise);
     const rngNoise2 = mulberry32(seed ^ 0x1234);
@@ -187,17 +189,26 @@ export class MountainRenderer {
         const px = i % N, py = (i - px) / N;
         const n = noise2(px * 0.12, py * 0.12);
         const n2 = noise(px * 0.08, py * 0.08);
-        // Mix snow patches into upper rock zone
-        const snowChance = (elev - this._rockLine) / (this._snowLine - this._rockLine);
-        if (n2 > 0.3 && snowChance > 0.6) {
-          pixels[i] = packSnow(SNOW_SHADOW);
+        if (this._season === Season.Winter) {
+          // Winter: snow covers everything above rock line (which is 0)
+          // Use snow palette instead of brown rock
+          const snowVal = 0.6 + n * 0.2;
+          if (snowVal > 0.75) pixels[i] = packSnow(SNOW_MID);
+          else if (snowVal > 0.55) pixels[i] = packSnow(SNOW_SHADOW);
+          else pixels[i] = packSnow(SNOW_SHADOW);
         } else {
-          let rgb: number;
-          if (n > 0.3) rgb = ROCK_WARM;
-          else if (n > 0.0) rgb = ROCK_LIGHT;
-          else if (n > -0.3) rgb = ROCK_MID;
-          else rgb = ROCK_DARK;
-          pixels[i] = applyBrightness(rgb, 1.0);
+          // Mix snow patches into upper rock zone
+          const snowChance = (elev - this._rockLine) / (this._snowLine - this._rockLine);
+          if (n2 > 0.3 && snowChance > 0.6) {
+            pixels[i] = packSnow(SNOW_SHADOW);
+          } else {
+            let rgb: number;
+            if (n > 0.3) rgb = ROCK_WARM;
+            else if (n > 0.0) rgb = ROCK_LIGHT;
+            else if (n > -0.3) rgb = ROCK_MID;
+            else rgb = ROCK_DARK;
+            pixels[i] = applyBrightness(rgb, 1.0);
+          }
         }
       }
     }
@@ -337,6 +348,12 @@ export class MountainRenderer {
         if (elev >= this._snowLine) {
           // Snow-zone cliff: cool gray rock with occasional snow
           if (n2 > 0.4 && cliffT < 0.3) rgb = SNOW_MID;
+          else if (n > 0.2) rgb = CLIFF_SNOW_LIGHT;
+          else if (n > -0.2) rgb = CLIFF_SNOW_MID;
+          else rgb = CLIFF_SNOW_DARK;
+        } else if (this._season === Season.Winter) {
+          // Winter: snow-covered cliff faces everywhere below snow line
+          if (n2 > 0.3 && cliffT < 0.4) rgb = SNOW_SHADOW;
           else if (n > 0.2) rgb = CLIFF_SNOW_LIGHT;
           else if (n > -0.2) rgb = CLIFF_SNOW_MID;
           else rgb = CLIFF_SNOW_DARK;

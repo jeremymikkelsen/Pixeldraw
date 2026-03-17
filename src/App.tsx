@@ -12,6 +12,7 @@ import { FoodPanel } from './components/panels/FoodPanel';
 import { ResourcesPanel } from './components/panels/ResourcesPanel';
 import { PopulationPanel } from './components/panels/PopulationPanel';
 import { GoodsPanel } from './components/panels/GoodsPanel';
+import { BuildMenu } from './components/panels/BuildMenu';
 import { ControlsHint } from './components/hud/ControlsHint';
 import './App.css';
 
@@ -59,6 +60,7 @@ export default function App() {
           <ResourcesPanel />
           <PopulationPanel />
           <GoodsPanel />
+          <BuildMenu />
           <ControlsHint />
         </>
       )}

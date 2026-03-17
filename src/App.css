@@ -847,6 +847,202 @@ html, body, #root {
 .fp-gov-mode-name  { font-size: 0.85rem; font-weight: 600; }
 .fp-gov-mode-desc  { font-size: 0.75rem; opacity: 0.6; margin-top: 0.1rem; }
 
+/* ─── Build button in HUD ────────────────────────────────────────────────── */
+.btn-build {
+  padding: 6px 14px;
+  border-radius: 5px;
+  border: 1px solid #5a8a5a;
+  background: rgba(90, 138, 90, 0.15);
+  color: #a8dca8;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.btn-build:hover { background: rgba(90, 138, 90, 0.3); }
+
+/* ─── Build menu panel ───────────────────────────────────────────────────── */
+.bm-box {
+  width: min(580px, 92vw);
+  max-height: 80vh;
+  padding: 1.5rem 1.75rem;
+  text-align: left;
+  overflow-y: auto;
+}
+
+.bm-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.bm-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  color: #c8b89a;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.bm-tab:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.25);
+}
+.bm-tab--active {
+  background: rgba(90, 138, 90, 0.2);
+  border-color: #5a8a5a;
+  color: #a8dca8;
+  font-weight: 600;
+}
+
+.bm-tab-icon { font-size: 1rem; line-height: 1; }
+.bm-tab-label { white-space: nowrap; }
+
+.bm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.bm-card {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.03);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  overflow: hidden;
+}
+.bm-card:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.2);
+}
+.bm-card--disabled {
+  opacity: 0.45;
+}
+
+.bm-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.55rem 0.75rem;
+}
+
+.bm-card-icon { font-size: 1.3rem; line-height: 1; flex-shrink: 0; }
+
+.bm-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.bm-card-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #f5d87a;
+}
+
+.bm-card-yields {
+  font-size: 0.75rem;
+  color: #78d878;
+}
+
+.bm-card-chevron {
+  font-size: 0.7rem;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.bm-card-details {
+  padding: 0 0.75rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+
+.bm-card-desc {
+  font-size: 0.78rem;
+  color: #c8c0b8;
+  line-height: 1.4;
+  margin-top: 0.4rem;
+}
+
+.bm-card-cost-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.bm-card-cost-label {
+  color: #888;
+  font-size: 0.75rem;
+}
+
+.bm-card-cost-items {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.bm-cost-item {
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  padding: 1px 6px;
+  font-size: 0.78rem;
+  color: #e0a030;
+}
+
+.bm-cost-free {
+  font-size: 0.78rem;
+  color: #78d878;
+}
+
+.bm-card-workers {
+  font-size: 0.75rem;
+  color: #8ab;
+}
+
+.bm-card-favor {
+  font-size: 0.75rem;
+  color: #c9a227;
+  font-weight: 600;
+}
+
+.bm-card-notes {
+  font-size: 0.72rem;
+  color: #999;
+  font-style: italic;
+}
+
+.bm-card-terrain {
+  font-size: 0.72rem;
+  color: #777;
+}
+
+.bm-card-cannot {
+  font-size: 0.75rem;
+  color: #e05050;
+  font-weight: 600;
+}
+
+.bm-hint {
+  font-size: 0.76rem;
+  opacity: 0.5;
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 800px) {
   .house-select-body { flex-direction: column; }

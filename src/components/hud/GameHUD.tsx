@@ -88,6 +88,11 @@ export function GameHUD() {
         <span className="season-year">Year {year}</span>
       </div>
 
+      {/* Build */}
+      <button className="btn-build" onClick={() => setOpenPanel('build')} title="Buildings & Improvements">
+        🏗️ Build
+      </button>
+
       {/* End Turn */}
       <button className="btn-end-turn" onClick={() => onEndTurn?.()}>
         End Turn

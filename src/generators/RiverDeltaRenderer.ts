@@ -2,6 +2,7 @@ import { createNoise2D } from 'simplex-noise';
 import { TopographyGenerator, mulberry32, TerrainType } from './TopographyGenerator';
 import { HydrologyGenerator } from './HydrologyGenerator';
 import { packABGR, applyBrightness } from './TerrainPalettes';
+import { RIVER_THRESHOLD } from './utils';
 
 // ---------------------------------------------------------------------------
 // River delta and protected harbor generation at major river mouths
@@ -24,6 +25,7 @@ export class RiverDeltaRenderer {
     hydro: HydrologyGenerator,
     resolution: number,
     seed: number,
+    terrainGrid?: Uint8Array | null,
   ): void {
     const rng = mulberry32(seed ^ 0xde17a);
     const rngNoise = mulberry32(seed ^ 0x71de);
@@ -80,6 +82,11 @@ export class RiverDeltaRenderer {
 
     // Render each river mouth
     for (const mouth of mouths) {
+      // Sand bar at all qualified mouths (only where flow is significant)
+      if (terrainGrid && mouth.flow >= RIVER_THRESHOLD * 3) {
+        this._renderSandBar(pixels, mouth, N, rng, terrainGrid);
+      }
+
       if (mouth.flow > 150) {
         // Large river: delta or harbor
         if (rng() < 0.5) {
@@ -90,6 +97,52 @@ export class RiverDeltaRenderer {
       } else {
         // Medium river: small delta/marsh
         this._renderSmallDelta(pixels, mouth, N, rng, noise);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Sand bar: perpendicular bar of sand extending into ocean at river mouth
+  // Leaves a gap at center for the river channel, tapers at ends.
+  // Only paints terrain ≤1 (ocean/water).
+  // -----------------------------------------------------------------------
+  private _renderSandBar(
+    pixels: Uint32Array,
+    mouth: { px: number; py: number; flow: number; dirX: number; dirY: number },
+    N: number,
+    rng: () => number,
+    terrainGrid: Uint8Array,
+  ): void {
+    const { px, py, dirX, dirY, flow } = mouth;
+
+    // Perpendicular to flow
+    const perpX = -dirY;
+    const perpY = dirX;
+
+    // Bar width scales mildly with flow; depth into ocean is fixed
+    const perpRadius = Math.floor(6 + Math.min(flow / 200, 1) * 6);  // 6–12px each side
+    const alongDepth = 5;  // px oceanward from mouth center
+
+    // Gap at center for the river (half-width of river channel)
+    const riverHalf = Math.max(2, Math.floor(1 + flow / 200));
+
+    for (let p = -perpRadius; p <= perpRadius; p++) {
+      if (Math.abs(p) < riverHalf) continue;  // river channel gap
+
+      // Taper: bar gets shallower toward its ends
+      const edgeFrac = Math.abs(p) / perpRadius;
+      const maxA = Math.max(1, Math.floor(alongDepth * (1 - edgeFrac * edgeFrac)));
+
+      for (let a = 0; a <= maxA; a++) {
+        const spx = Math.round(px + perpX * p + dirX * a);
+        const spy = Math.round(py + perpY * p + dirY * a);
+        if (spx < 0 || spx >= N || spy < 0 || spy >= N) continue;
+
+        const idx = spy * N + spx;
+        if (terrainGrid[idx] > 1) continue;  // only ocean/water
+
+        const ci = ((spx * 3 + spy * 7) ^ (p & 0xf)) & 3;
+        pixels[idx] = applyBrightness(SAND_DUNE_COLORS[ci], 0.88 + rng() * 0.12);
       }
     }
   }

@@ -703,7 +703,7 @@ export class MapScene extends Phaser.Scene {
 
     // River deltas and harbors
     const deltaRenderer = new RiverDeltaRenderer();
-    deltaRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
+    deltaRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed, renderer.terrainGrid);
 
     // Roads between duchy capitals (pass riverMask for bridge detection)
     const roadMask = roadRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, this._state.roads, riverMask);

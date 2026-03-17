@@ -655,7 +655,12 @@ export class MapScene extends Phaser.Scene {
     // Combine bridge + building pixels for per-frame restoration above river animation
     this._buildingPixels = [...bridgePixelColors, ...buildingPixelColors];
 
-    // Wire building mask into river animator so rivers don't overdraw buildings
+    // Merge bridge mask into building mask so river animator skips bridge pixels too
+    for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
+      if (roadRenderer.bridgeMask[bi]) buildingMask[bi] = 1;
+    }
+
+    // Wire building+bridge mask into river animator so rivers don't overdraw either
     riverAnimator.buildingMask = buildingMask;
 
     // Initial animation frame — then restore buildings/bridges on top

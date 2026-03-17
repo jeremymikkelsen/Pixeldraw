@@ -622,7 +622,7 @@ export class MapScene extends Phaser.Scene {
     this._screenToSource = mountainRenderer.screenToSource;
 
     // River animator (buildingMask set after renderSprites below)
-    const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask);
+    const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask, renderer.terrainGrid);
     riverAnimator.extrusionMap = mountainRenderer.extrusionMap;
 
     // Coastal animation

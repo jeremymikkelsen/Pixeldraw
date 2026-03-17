@@ -87,10 +87,11 @@ export class RiverAnimator {
     resolution: number,
     seed: number,
     treeMask?: Uint8Array,
+    terrainGrid?: Uint8Array | null,
   ) {
     this._N = resolution;
     this._treeMask = treeMask || null;
-    this._build(topo, hydro, resolution, seed);
+    this._build(topo, hydro, resolution, seed, terrainGrid ?? null);
   }
 
   get pixelCount(): number { return this._pixels.length; }
@@ -103,6 +104,7 @@ export class RiverAnimator {
     hydro: HydrologyGenerator,
     resolution: number,
     seed: number,
+    terrainGrid: Uint8Array | null = null,
   ): void {
     const rng = mulberry32(seed ^ 0xa10e0000);
     const N = resolution;
@@ -122,10 +124,6 @@ export class RiverAnimator {
       for (let si = 0; si < path.length - 1; si++) {
         const rA = path[si];
         const rB = path[si + 1];
-
-        // Skip segments flowing into ocean/water
-        const terrainB = topo.terrainType[rB];
-        if (terrainB === 'ocean' || terrainB === 'water') continue;
 
         const x0 = Math.floor(points[rA].x / scale);
         const y0 = Math.floor(points[rA].y / scale);
@@ -157,6 +155,8 @@ export class RiverAnimator {
           (px, py, isCenterLine) => {
             const idx = py * N + px;
             if (visited[idx]) return;
+            // Skip ocean/water pixels — river animation stays on land
+            if (terrainGrid && (terrainGrid[idx] === 0 || terrainGrid[idx] === 1)) return;
             visited[idx] = 1;
 
             // Phase for wave animation

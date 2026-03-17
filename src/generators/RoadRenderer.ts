@@ -92,9 +92,20 @@ export class RoadRenderer {
     const r = (ROAD_WIDTH - 1) >> 1;
 
     while (true) {
-      // Check if this step crosses a river
-      const isBridge = riverMask !== null && cx >= 0 && cy >= 0 && cx < N && cy < N
-        && riverMask[cy * N + cx] === 1;
+      // Check if any pixel in this stamp overlaps a river (more robust than center-only check)
+      let isBridge = false;
+      if (riverMask !== null) {
+        outer: for (let oy = -r; oy <= r; oy++) {
+          for (let ox = -r; ox <= r; ox++) {
+            const checkX = cx + ox, checkY = cy + oy;
+            if (checkX >= 0 && checkY >= 0 && checkX < N && checkY < N
+                && riverMask[checkY * N + checkX]) {
+              isBridge = true;
+              break outer;
+            }
+          }
+        }
+      }
 
       for (let oy = -r; oy <= r; oy++) {
         const py = cy + oy;

@@ -21,6 +21,7 @@ const LIGHT_STEPS = 5;
 
 export class GroundRenderer {
   regionGrid: Uint16Array | null = null;
+  terrainGrid: Uint8Array | null = null;
 
   render(topo: TopographyGenerator, resolution: number, hydro?: HydrologyGenerator, season: Season = Season.Summer): Uint32Array {
     const { size, seed, mesh, terrainType: regionTerrain } = topo;
@@ -115,6 +116,7 @@ export class GroundRenderer {
     }
 
     this.regionGrid = regionGrid;
+    this.terrainGrid = terrainGrid;
 
     // ------------------------------------------------------------------
     // Phase 1B: Slope via central differences
@@ -248,14 +250,13 @@ export class GroundRenderer {
     const logMin = Math.log(RIVER_MIN);
     const logRange = Math.log(maxAccum) - logMin;
 
+    // Per-pixel ocean clip: index 0 = ocean, 1 = water
+    const tg = this.terrainGrid;
+
     for (const path of hydro.rivers) {
       for (let si = 0; si < path.length - 1; si++) {
         const rA = path[si];
         const rB = path[si + 1];
-
-        // Skip segments that flow into ocean/water
-        const terrainB = topo.terrainType[rB];
-        if (terrainB === 'ocean' || terrainB === 'water') continue;
 
         // World coords → pixel coords
         const x0 = Math.floor(points[rA].x / scale);
@@ -272,8 +273,8 @@ export class GroundRenderer {
         const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));
         const color = RIVER_COLORS[ci];
 
-        // Bresenham line with thickness, mark river mask
-        this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color, riverMask);
+        // Bresenham line with thickness, mark river mask, clip ocean pixels
+        this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color, riverMask, tg);
       }
     }
 
@@ -285,6 +286,7 @@ export class GroundRenderer {
     x0: number, y0: number, x1: number, y1: number,
     width: number, color: number,
     mask?: Uint8Array,
+    terrainClip?: Uint8Array | null,
   ): void {
     const dx = Math.abs(x1 - x0);
     const dy = Math.abs(y1 - y0);
@@ -303,6 +305,8 @@ export class GroundRenderer {
           const px = cx + ox;
           if (px < 0 || px >= N) continue;
           const pidx = py * N + px;
+          // Skip ocean/water pixels so rivers don't extend into the sea
+          if (terrainClip && (terrainClip[pidx] === 0 || terrainClip[pidx] === 1)) continue;
           pixels[pidx] = color;
           if (mask) mask[pidx] = 1;
         }

@@ -255,9 +255,11 @@ export class CoastalRenderer {
     // ----------------------------------------------------------------
     // Fix 1px gap: paint wet sand on ocean pixels directly adjacent to land
     // ----------------------------------------------------------------
+    // Paint wet sand on the 1-2px ocean strip adjacent to land, so any projection
+    // gap at the ocean/beach boundary shows sand rather than dark ocean.
     const wetSand = WET_SAND_BY_SEASON[season];
     for (let i = 0; i < N * N; i++) {
-      if (isOcean[i] && landDist[i] === 0) {
+      if (isOcean[i] && landDist[i] <= 1) {
         pixels[i] = wetSand;
       }
     }

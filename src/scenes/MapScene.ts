@@ -152,20 +152,19 @@ export class MapScene extends Phaser.Scene {
     this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
       const pointer = this.input.activePointer;
       const cam = this.cameras.main;
-
-      // World position under cursor before zoom
-      const worldBefore = cam.getWorldPoint(pointer.x, pointer.y);
+      const zoomBefore = cam.zoom;
 
       // Apply zoom
       const zoomDelta = dy > 0 ? (1 - ZOOM_SPEED * 3) : (1 + ZOOM_SPEED * 3);
-      cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * zoomDelta));
+      const zoomAfter = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomBefore * zoomDelta));
+      cam.zoom = zoomAfter;
 
-      // World position under cursor after zoom — let Phaser do the math
-      const worldAfter = cam.getWorldPoint(pointer.x, pointer.y);
-
-      // Shift camera so the same world point stays under the cursor
-      cam.scrollX += worldBefore.x - worldAfter.x;
-      cam.scrollY += worldBefore.y - worldAfter.y;
+      // Phaser camera world coords: worldX = (screenX - w/2) / zoom + scrollX + w/2
+      // Correction = (screenX - w/2) * (1/zoomBefore - 1/zoomAfter)
+      const dx = (pointer.x - cam.width * 0.5) * (1 / zoomBefore - 1 / zoomAfter);
+      const dv = (pointer.y - cam.height * 0.5) * (1 / zoomBefore - 1 / zoomAfter);
+      cam.scrollX += dx;
+      cam.scrollY += dv;
     });
 
     // Space+drag panning — mousedown while space held

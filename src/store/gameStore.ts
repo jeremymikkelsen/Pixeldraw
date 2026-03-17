@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import type { GameState } from '../state/GameState';
 import type { Duchy, HouseData } from '../state/Duchy';
 import type { Season } from '../state/Season';
+import type { DuchyEconomy, RationLevel, DevelopmentMode, ResourceType, LaborAssignment } from '../state/Economy';
 
 export interface GameStoreState {
   // Game session state (null = not in game)
@@ -16,6 +17,7 @@ export interface GameStoreState {
   // Derived for easy access
   playerDuchy: Duchy | null;
   playerHouse: HouseData | null;
+  playerEconomy: DuchyEconomy | null;
   season: Season | null;
   year: number;
 
@@ -27,13 +29,21 @@ export interface GameStoreState {
   setGameState: (state: GameState, regionGrid: Uint16Array | null) => void;
   setCallbacks: (onEndTurn: () => void, onNewGame: () => void) => void;
   clearGame: () => void;
+
+  // Economic actions
+  setRationLevel: (level: RationLevel) => void;
+  setDevelopmentMode: (mode: DevelopmentMode) => void;
+  setTaxRate: (rate: number) => void;
+  setLaborAllocation: (role: keyof Omit<LaborAssignment, 'unemployed'>, value: number) => void;
+  setFoodEatOrder: (order: ResourceType[]) => void;
 }
 
-export const useGameStore = create<GameStoreState>((set) => ({
+export const useGameStore = create<GameStoreState>((set, get) => ({
   gameState: null,
   regionGrid: null,
   playerDuchy: null,
   playerHouse: null,
+  playerEconomy: null,
   season: null,
   year: 1,
   onEndTurn: null,
@@ -41,11 +51,13 @@ export const useGameStore = create<GameStoreState>((set) => ({
 
   setGameState: (gameState, regionGrid) => {
     const playerDuchy = gameState.duchies[gameState.playerDuchy] ?? null;
+    const playerEconomy = gameState.economies[gameState.playerDuchy] ?? null;
     set({
       gameState,
       regionGrid,
       playerDuchy,
       playerHouse: playerDuchy?.house ?? null,
+      playerEconomy,
       season: gameState.season,
       year: gameState.year,
     });
@@ -58,7 +70,57 @@ export const useGameStore = create<GameStoreState>((set) => ({
     regionGrid: null,
     playerDuchy: null,
     playerHouse: null,
+    playerEconomy: null,
     season: null,
     year: 1,
   }),
+
+  // ─── Economic actions ──────────────────────────────────────────────────────
+
+  setRationLevel: (level) => {
+    const { gameState } = get();
+    if (!gameState) return;
+    gameState.economies[gameState.playerDuchy].rationLevel = level;
+    set({ playerEconomy: { ...gameState.economies[gameState.playerDuchy] } });
+  },
+
+  setDevelopmentMode: (mode) => {
+    const { gameState } = get();
+    if (!gameState) return;
+    gameState.economies[gameState.playerDuchy].developmentMode = mode;
+    set({ playerEconomy: { ...gameState.economies[gameState.playerDuchy] } });
+  },
+
+  setTaxRate: (rate) => {
+    const { gameState } = get();
+    if (!gameState) return;
+    gameState.economies[gameState.playerDuchy].taxRate = Math.max(0, Math.min(100, rate));
+    set({ playerEconomy: { ...gameState.economies[gameState.playerDuchy] } });
+  },
+
+  setLaborAllocation: (role, value) => {
+    const { gameState } = get();
+    if (!gameState) return;
+    const eco = gameState.economies[gameState.playerDuchy];
+    const la = eco.laborAssignment;
+    const total = eco.population.total;
+
+    // Compute how much is assigned to other roles
+    const roles: (keyof Omit<LaborAssignment, 'unemployed'>)[] = ['farmers', 'lumberjacks', 'miners', 'quarrymen', 'smiths'];
+    const otherAssigned = roles.filter(r => r !== role).reduce((s, r) => s + la[r], 0);
+    const maxForRole = Math.max(0, total - otherAssigned);
+
+    la[role] = Math.max(0, Math.min(maxForRole, value));
+    const newTotal = roles.reduce((s, r) => s + la[r], 0);
+    la.unemployed = Math.max(0, total - newTotal);
+
+    set({ playerEconomy: { ...eco } });
+  },
+
+  setFoodEatOrder: (order) => {
+    const { gameState } = get();
+    if (!gameState) return;
+    gameState.economies[gameState.playerDuchy].foodEatOrder = order;
+    set({ playerEconomy: { ...gameState.economies[gameState.playerDuchy] } });
+  },
 }));

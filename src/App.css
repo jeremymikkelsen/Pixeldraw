@@ -683,6 +683,170 @@ html, body, #root {
   pointer-events: none;
 }
 
+/* ─── Food / Resource / Population panel shared ──────────────────────────── */
+.fp-box {
+  width: min(520px, 90vw);
+  padding: 1.5rem 1.75rem;
+  text-align: left;
+}
+
+.fp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-top: 0.75rem;
+}
+
+.fp-table thead tr { border-bottom: 1px solid rgba(255,255,255,0.12); }
+
+.fp-table th {
+  padding: 0 0 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: rgba(255,255,255,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fp-th-food { text-align: left; }
+.fp-th-num  { text-align: right; }
+.fp-th-order { width: 3rem; text-align: center; }
+
+.fp-table tbody tr { border-top: 1px solid rgba(255,255,255,0.05); }
+.fp-table td { padding: 0.3rem 0; }
+.fp-table tfoot tr { border-top: 1px solid rgba(255,255,255,0.18); }
+
+.fp-num   { text-align: right; font-variant-numeric: tabular-nums; }
+.fp-prod  { color: #78d878; }
+.fp-eat   { color: #e0a030; }
+.fp-waste { color: #e05050; }
+
+.fp-row-empty { opacity: 0.35; }
+.fp-note      { opacity: 0.4; font-size: 0.75em; margin-left: 4px; }
+.fp-hint-text { font-size: 0.76rem; opacity: 0.55; margin-top: 0.5rem; }
+
+.fp-total-row td { font-weight: 700; padding-top: 0.45rem; }
+
+/* ─── Ration selector ────────────────────────────────────────────────────── */
+.fp-ration-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.fp-ration-label { font-size: 0.82rem; opacity: 0.7; white-space: nowrap; }
+.fp-ration-hint  { font-size: 0.78rem; opacity: 0.55; margin-left: auto; }
+
+.ration-pills { display: flex; gap: 0.25rem; }
+
+.ration-pill {
+  padding: 0.2rem 0.65rem;
+  font-size: 0.78rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.06);
+  color: #c8b89a;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.ration-pill:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.4); }
+
+.ration-pill--active {
+  background: rgba(201,162,39,0.22);
+  border-color: #c9a227;
+  color: #f5d87a;
+  font-weight: 700;
+}
+
+.ration-pill--disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ─── Eat-order buttons ──────────────────────────────────────────────────── */
+.fp-order-btns { display: flex; gap: 2px; justify-content: center; }
+.fp-order-btn {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 3px;
+  color: #e8dcc8;
+  font-size: 0.7rem;
+  padding: 1px 4px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.fp-order-btn:hover:not(:disabled) { background: rgba(255,255,255,0.18); }
+.fp-order-btn:disabled { opacity: 0.25; cursor: default; }
+
+/* ─── Population panel ───────────────────────────────────────────────────── */
+.fp-pop-total    { font-size: 1.4rem; font-weight: 700; margin: 0.5rem 0 0.75rem; }
+.fp-pop-happiness { margin-bottom: 0.75rem; }
+.fp-pop-happiness-row {
+  display: flex; justify-content: space-between;
+  font-size: 0.82rem; margin-bottom: 0.3rem;
+}
+.fp-pop-bar-bg   { background: rgba(255,255,255,0.1); border-radius: 4px; height: 8px; overflow: hidden; }
+.fp-pop-bar-fill { height: 100%; transition: width 0.3s; }
+.fp-pop-trend    { margin-top: 0.75rem; font-size: 0.8rem; opacity: 0.7; display: flex; flex-direction: column; gap: 0.2rem; }
+
+/* ─── Labor panel ────────────────────────────────────────────────────────── */
+.labor-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  padding-top: 0.75rem;
+}
+.labor-summary-inline { font-size: 0.75rem; opacity: 0.6; font-weight: 400; }
+
+.labor-row { margin-bottom: 0.75rem; }
+.labor-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.25rem;
+  gap: 0.5rem;
+}
+.labor-role-name { font-size: 0.88rem; font-weight: 600; }
+.labor-row-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+.labor-bonus { opacity: 0.7; }
+.labor-count {
+  font-weight: 700;
+  min-width: 1.5rem;
+  text-align: right;
+  color: #c9a227;
+}
+
+.fp-slider { width: 100%; accent-color: #c9a227; }
+
+/* ─── Governance (tax + dev mode) ────────────────────────────────────────── */
+.fp-gov-section    { margin-bottom: 1.2rem; }
+.fp-gov-label-row  { display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 0.3rem; }
+.fp-gov-value      { color: #c9a227; font-weight: 700; }
+.fp-gov-hints      { display: flex; justify-content: space-between; font-size: 0.72rem; opacity: 0.5; margin-top: 0.2rem; }
+.fp-gov-mode-title { font-size: 0.85rem; opacity: 0.8; margin-bottom: 0.5rem; }
+.fp-gov-mode-opt {
+  display: flex; align-items: flex-start; gap: 0.5rem;
+  margin-bottom: 0.5rem; cursor: pointer;
+  padding: 0.4rem 0.6rem; border-radius: 4px;
+  border: 1px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
+}
+.fp-gov-mode-opt--active { background: rgba(201,162,39,0.12); border-color: rgba(201,162,39,0.35); }
+.fp-radio          { margin-top: 2px; accent-color: #c9a227; }
+.fp-gov-mode-name  { font-size: 0.85rem; font-weight: 600; }
+.fp-gov-mode-desc  { font-size: 0.75rem; opacity: 0.6; margin-top: 0.1rem; }
+
 /* ─── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 800px) {
   .house-select-body { flex-direction: column; }

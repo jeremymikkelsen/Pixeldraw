@@ -9,6 +9,7 @@ import { Season, nextSeason } from './Season';
 import { Duchy } from './Duchy';
 import { generateDuchies } from './DuchyGenerator';
 import { generateRoads, RoadSegment } from '../generators/RoadGenerator';
+import { DuchyEconomy, createDuchyEconomy, processEconomyTurn, countTerrain } from './Economy';
 
 export interface GameState {
   seed: number;
@@ -27,6 +28,9 @@ export interface GameState {
 
   // Infrastructure
   roads: RoadSegment[];
+
+  // Economy — one per duchy, indexed same as duchies[]
+  economies: DuchyEconomy[];
 }
 
 /**
@@ -39,6 +43,9 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
   const { duchies, regionToDuchy } = generateDuchies(topo, hydro, seed);
   const roads = generateRoads(topo, hydro, duchies);
 
+  // Initialize economies for each duchy
+  const economies = duchies.map(() => createDuchyEconomy(50));
+
   return {
     seed,
     turn: 0,
@@ -50,14 +57,26 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
     duchies,
     regionToDuchy,
     roads,
+    economies,
   };
 }
 
 /**
  * Advance the game by one turn (one season).
+ * Processes economy for all duchies.
  */
 export function advanceTurn(state: GameState): void {
   state.turn++;
   state.season = nextSeason(state.season);
   state.year = Math.floor(state.turn / 4) + 1;
+
+  // Process economy for each duchy
+  const terrainTypes = state.topo.terrainType;
+  for (let i = 0; i < state.duchies.length; i++) {
+    const duchy = state.duchies[i];
+    const terrain = countTerrain(
+      duchy.regions, terrainTypes, duchy.hasRiver, duchy.hasForest,
+    );
+    state.economies[i] = processEconomyTurn(state.economies[i], terrain);
+  }
 }

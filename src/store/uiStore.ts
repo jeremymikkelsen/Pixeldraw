@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 
-export type OpenPanel = 'duchy' | 'king' | null;
+export type OpenPanel = 'duchy' | 'food' | 'resources' | 'goods' | 'population' | 'king' | null;
 
 export interface UIStoreState {
   // Which region is selected (clicked)

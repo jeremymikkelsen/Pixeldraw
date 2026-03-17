@@ -40,18 +40,16 @@ function ShieldCrest({ color, initial }: { color: string; initial: string }) {
 }
 
 export function GameHUD() {
-  const { playerHouse, playerDuchy, season, year, gameState, onEndTurn, onNewGame } = useGameStore();
+  const { playerHouse, playerDuchy, playerEconomy, season, year, onEndTurn } = useGameStore();
   const { setOpenPanel } = useUIStore();
 
-  if (!playerHouse || !playerDuchy || season === null || !gameState) return null;
+  if (!playerHouse || !playerDuchy || season === null || !playerEconomy) return null;
 
   const seasonIcon = SEASON_ICONS[season] ?? '';
   const colorHex = '#' + playerHouse.color.toString(16).padStart(6, '0');
   const initial = playerHouse.name.replace('House ', '').charAt(0).toUpperCase();
   const economyLabel = ECONOMY_LABELS[playerHouse.axis] ?? playerHouse.axis;
-
-  const duchyCount = gameState.duchies.length;
-  const regionCount = playerDuchy.regions.length;
+  const { resources, population } = playerEconomy;
 
   return (
     <div className="hud-bar">
@@ -66,12 +64,22 @@ export function GameHUD() {
         </div>
       </button>
 
-      {/* Info */}
+      {/* Resources */}
       <div className="hud-info">
-        <span>{regionCount} regions</span>
-        <span>{duchyCount} duchies</span>
-        {playerDuchy.hasRiver && <span>🏞 River</span>}
-        {playerDuchy.hasForest && <span>🌲 Forest</span>}
+        <span className="hud-resource-group hud-clickable" onClick={() => setOpenPanel('food')}>
+          🌾 {resources.grain}
+          <span>🐄 {resources.cattle}</span>
+          <span>🐟 {resources.fish}</span>
+          <span>🍎 {resources.apples}</span>
+        </span>
+        <span className="hud-resource-group hud-clickable" onClick={() => setOpenPanel('resources')}>
+          🪵 {resources.timber}
+          <span>⛏️ {resources.ore}</span>
+          <span>🪨 {resources.stone}</span>
+          <span>⚙️ {resources.iron}</span>
+        </span>
+        <span>💰 {resources.gold}</span>
+        <span className="hud-clickable" onClick={() => setOpenPanel('population')}>👥 {population.total}</span>
       </div>
 
       {/* Season + Year */}

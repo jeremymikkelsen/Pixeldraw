@@ -8,6 +8,10 @@ import { HouseSelectScreen } from './components/screens/HouseSelectScreen';
 import { GameHUD } from './components/hud/GameHUD';
 import { RegionPanel } from './components/panels/RegionPanel';
 import { DuchyPanel } from './components/panels/DuchyPanel';
+import { FoodPanel } from './components/panels/FoodPanel';
+import { ResourcesPanel } from './components/panels/ResourcesPanel';
+import { PopulationPanel } from './components/panels/PopulationPanel';
+import { GoodsPanel } from './components/panels/GoodsPanel';
 import { ControlsHint } from './components/hud/ControlsHint';
 import './App.css';
 
@@ -51,6 +55,10 @@ export default function App() {
           <GameHUD />
           <RegionPanel />
           <DuchyPanel />
+          <FoodPanel />
+          <ResourcesPanel />
+          <PopulationPanel />
+          <GoodsPanel />
           <ControlsHint />
         </>
       )}

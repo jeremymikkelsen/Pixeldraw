@@ -254,18 +254,18 @@ export class GroundRenderer {
     const tg = this.terrainGrid;
 
     // How far to extrapolate river mouth beyond last region center (pixels)
-    const MOUTH_EXTEND = 160;
+    const MOUTH_EXTEND = 100;
 
+    // Draw all river segments
     for (const path of hydro.rivers) {
       for (let si = 0; si < path.length - 1; si++) {
         const rA = path[si];
         const rB = path[si + 1];
 
-        // World coords → pixel coords
         const x0 = Math.floor(points[rA].x / scale);
         const y0 = Math.floor(points[rA].y / scale);
-        let x1 = Math.floor(points[rB].x / scale);
-        let y1 = Math.floor(points[rB].y / scale);
+        const x1 = Math.floor(points[rB].x / scale);
+        const y1 = Math.floor(points[rB].y / scale);
 
         // Width from flow accumulation (1–10 pixels), log-space normalization, 10% steps
         const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
@@ -276,19 +276,39 @@ export class GroundRenderer {
         const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));
         const color = RIVER_COLORS[ci];
 
-        // For the last segment of each river path, extrapolate beyond the endpoint
-        // in the same flow direction so the river reaches the ocean boundary.
-        // The terrain clip (terrainGrid === 0) stops drawing at deep ocean naturally.
-        if (si === path.length - 2) {
-          const fdx = x1 - x0, fdy = y1 - y0;
-          const flen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
-          x1 = Math.round(x1 + (fdx / flen) * MOUTH_EXTEND);
-          y1 = Math.round(y1 + (fdy / flen) * MOUTH_EXTEND);
-        }
-
-        // Bresenham line with thickness, mark river mask, clip ocean pixels
         this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color, riverMask, tg);
       }
+    }
+
+    // Extend river mouths to reach deep ocean — one extension per unique endpoint
+    // to avoid fanning when multiple tributaries share the same terminal region.
+    const extendedEndpoints = new Set<number>();
+    for (const path of hydro.rivers) {
+      if (path.length < 2) continue;
+      const lastR = path[path.length - 1];
+      if (extendedEndpoints.has(lastR)) continue;
+      extendedEndpoints.add(lastR);
+
+      const prevR = path[path.length - 2];
+      const x0 = Math.floor(points[prevR].x / scale);
+      const y0 = Math.floor(points[prevR].y / scale);
+      const x1 = Math.floor(points[lastR].x / scale);
+      const y1 = Math.floor(points[lastR].y / scale);
+
+      const fdx = x1 - x0, fdy = y1 - y0;
+      const flen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
+      const extX = Math.round(x1 + (fdx / flen) * MOUTH_EXTEND);
+      const extY = Math.round(y1 + (fdy / flen) * MOUTH_EXTEND);
+
+      // Use the highest flow accumulation among rivers sharing this endpoint
+      const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[lastR]);
+      const t = Math.min(1, (Math.log(flow) - logMin) / logRange);
+      const width = Math.max(1, Math.ceil(t * 10));
+      const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));
+      const color = RIVER_COLORS[ci];
+
+      // No terrain clip — draw into ocean so the river visually reaches dark water
+      this._drawThickLine(pixels, N, x1, y1, extX, extY, width, color, riverMask, null);
     }
 
     return riverMask;

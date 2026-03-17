@@ -13,6 +13,8 @@ import { RoadRenderer } from '../generators/RoadRenderer';
 import { useGameStore } from '../store/gameStore';
 import { useUIStore } from '../store/uiStore';
 import { loadSprite, type LoadedSprite } from '../generators/SpriteLoader';
+import { FarmRenderer } from '../generators/FarmRenderer';
+import { PastureAnimator } from '../generators/PastureAnimator';
 
 const MAP_SIZE = 3072;
 const PIXEL_RESOLUTION = 1536;
@@ -54,6 +56,7 @@ export class MapScene extends Phaser.Scene {
   private _ctx!: CanvasRenderingContext2D;
   private _riverAnimator!: RiverAnimator;
   private _coastalRenderer!: CoastalRenderer;
+  private _pastureAnimator: PastureAnimator | null = null;
 
   // Region hover highlight
   private _regionGrid!: Uint16Array | null;
@@ -454,6 +457,9 @@ export class MapScene extends Phaser.Scene {
         if (this._coastalRenderer) {
           this._coastalRenderer.animate(this._pixels, time);
         }
+        if (this._pastureAnimator) {
+          this._pastureAnimator.animate(this._pixels, time);
+        }
         // Restore building/bridge pixels so they always render above rivers and coast
         for (const bp of this._buildingPixels) {
           this._pixels[bp.idx] = bp.color;
@@ -719,6 +725,13 @@ export class MapScene extends Phaser.Scene {
       renderDuchies(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION);
     }
 
+    // Agricultural improvements — grain fields, veggie fields, cow pastures
+    const farmRenderer = new FarmRenderer();
+    if (this._state.agImprovements && renderer.regionGrid) {
+      farmRenderer.render(pixels, PIXEL_RESOLUTION, this._state.agImprovements,
+        topo, renderer.regionGrid, seed, season);
+    }
+
     // Static rivers — rendered BEFORE coastal so riverMask can suppress beach/waves at river mouths
     const roadRenderer = new RoadRenderer();
     const riverMask = renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
@@ -749,9 +762,14 @@ export class MapScene extends Phaser.Scene {
       this._state.duchies, this._state.regionToDuchy,
     );
 
-    // Merge road mask into structure mask so trees avoid roads
+    // Merge road mask + farm mask into structure mask so trees avoid roads and fields
     for (let i = 0; i < roadMask.length; i++) {
       if (roadMask[i]) structureMask[i] = 1;
+    }
+    if (farmRenderer.farmMask) {
+      for (let i = 0; i < farmRenderer.farmMask.length; i++) {
+        if (farmRenderer.farmMask[i]) structureMask[i] = 1;
+      }
     }
 
     // Trees with seasonal palettes (pass structureMask to avoid overlapping buildings/roads)
@@ -804,6 +822,11 @@ export class MapScene extends Phaser.Scene {
     for (const bp of this._buildingPixels) {
       pixels[bp.idx] = bp.color;
     }
+
+    // Pasture animator (cows wander over pasture regions)
+    this._pastureAnimator = farmRenderer.pastures.length > 0
+      ? new PastureAnimator(farmRenderer.pastures, PIXEL_RESOLUTION, seed, season)
+      : null;
 
     // Store refs
     this._pixels = pixels;

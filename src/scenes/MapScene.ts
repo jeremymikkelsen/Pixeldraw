@@ -154,23 +154,18 @@ export class MapScene extends Phaser.Scene {
       const cam = this.cameras.main;
 
       // World position under cursor before zoom
-      const worldXBefore = pointer.worldX;
-      const worldYBefore = pointer.worldY;
+      const worldBefore = cam.getWorldPoint(pointer.x, pointer.y);
 
       // Apply zoom
       const zoomDelta = dy > 0 ? (1 - ZOOM_SPEED * 3) : (1 + ZOOM_SPEED * 3);
       cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * zoomDelta));
 
-      // Recalculate world position under cursor after zoom change
-      // Phaser camera: worldX = scrollX + (screenX - viewportW/2) / zoom
-      const halfW = cam.width * 0.5;
-      const halfH = cam.height * 0.5;
-      const worldXAfter = cam.scrollX + (pointer.x - halfW) / cam.zoom;
-      const worldYAfter = cam.scrollY + (pointer.y - halfH) / cam.zoom;
+      // World position under cursor after zoom — let Phaser do the math
+      const worldAfter = cam.getWorldPoint(pointer.x, pointer.y);
 
       // Shift camera so the same world point stays under the cursor
-      cam.scrollX += worldXBefore - worldXAfter;
-      cam.scrollY += worldYBefore - worldYAfter;
+      cam.scrollX += worldBefore.x - worldAfter.x;
+      cam.scrollY += worldBefore.y - worldAfter.y;
     });
 
     // Space+drag panning — mousedown while space held

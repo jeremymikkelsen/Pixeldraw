@@ -6,11 +6,11 @@ import { CoastalRenderer } from '../generators/CoastalRenderer';
 import { MountainRenderer } from '../generators/MountainRenderer';
 import { RiverDeltaRenderer } from '../generators/RiverDeltaRenderer';
 import { StructureRenderer } from '../generators/StructureRenderer';
-import { GameState, createGameState } from '../state/GameState';
+import { GameState, createGameState, advanceTurn } from '../state/GameState';
 import { renderDuchies, renderDuchyBordersOnTop } from '../renderers/DuchyRenderer';
-import { UIManager } from '../ui/UIManager';
-import { SetupScreen } from '../ui/SetupScreen';
 import { RoadRenderer } from '../generators/RoadRenderer';
+import { useGameStore } from '../store/gameStore';
+import { useUIStore } from '../store/uiStore';
 import { loadSprite, type LoadedSprite } from '../generators/SpriteLoader';
 
 const MAP_SIZE = 3072;
@@ -76,9 +76,8 @@ export class MapScene extends Phaser.Scene {
   private _camStartX = 0;
   private _camStartY = 0;
 
-  // Game state + UI
+  // Game state
   private _state!: GameState;
-  private _ui!: UIManager;
 
   // Building + bridge pixels to restore after river animation each frame
   private _buildingPixels: { idx: number; color: number }[] = [];
@@ -92,21 +91,39 @@ export class MapScene extends Phaser.Scene {
 
   // Player's chosen house index
   private _playerHouse = 0;
-  private _setupScreen: SetupScreen | null = null;
+
+  // Event listener references for cleanup
+  private _startGameHandler: ((e: Event) => void) | null = null;
 
   create(): void {
-    this._ui = new UIManager();
-    this._ui.onTurnAdvanced = () => {
-      console.log(`[Turn] Year ${this._state.year}, ${this._state.season}`);
-      const cam = this.cameras.main;
-      // Fade to black, re-render, then fade back in
-      cam.fadeOut(400, 0, 0, 0);
-      cam.once('camerafadeoutcomplete', () => {
-        this._renderMap();
-        this._ui.setState(this._state, this._regionGrid!);
-        cam.fadeIn(400, 0, 0, 0);
-      });
+    // Wire up store callbacks for React UI
+    useGameStore.getState().setCallbacks(
+      // onEndTurn
+      () => {
+        if (!this._state) return;
+        advanceTurn(this._state);
+        console.log(`[Turn] Year ${this._state.year}, ${this._state.season}`);
+        const cam = this.cameras.main;
+        cam.fadeOut(400, 0, 0, 0);
+        cam.once('camerafadeoutcomplete', () => {
+          this._renderMap();
+          this._pushStateToStore();
+          cam.fadeIn(400, 0, 0, 0);
+        });
+      },
+      // onNewGame
+      () => {
+        useUIStore.getState().setPhase('house-select');
+      },
+    );
+
+    // Listen for start-game events from React HouseSelectScreen
+    this._startGameHandler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      this._playerHouse = detail.houseIndex;
+      this._startGame(detail.seed);
     };
+    window.addEventListener('pixeldraw:start-game', this._startGameHandler);
 
     // Camera setup
     const cam = this.cameras.main;
@@ -130,9 +147,9 @@ export class MapScene extends Phaser.Scene {
     // Space key for hand-pan mode
     this._spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-    // Enter = new game
+    // Enter = new game (goes back to house select via React)
     this.input.keyboard!.on('keydown-ENTER', () => {
-      this._showSetupAndStart();
+      useUIStore.getState().setPhase('house-select');
     });
 
     // Overlay toggles (8/9/0)
@@ -227,53 +244,41 @@ export class MapScene extends Phaser.Scene {
       }
     });
 
-    // HUD text (fixed to camera via setScrollFactor)
-    const hudLabel = this._isTouchDevice
-      ? 'Drag to pan · Pinch to zoom · Buttons at bottom-right'
-      : 'WASD/Arrows pan · Scroll zoom · Hold SPACE drag pan · ENTER new game · 8/9/0 overlays';
-    this.add.text(8, 40, hudLabel, {
-      fontSize: '13px',
-      color: '#ffffff',
-      backgroundColor: '#00000088',
-      padding: { x: 6, y: 4 },
-    }).setDepth(10).setScrollFactor(0);
-
-    // Show setup screen on first load
-    this._showSetupAndStart();
+    // Load manor sprites eagerly
+    this._loadManorSprites();
   }
 
-  private async _showSetupAndStart(): Promise<void> {
-    if (this._setupScreen) {
-      this._setupScreen.destroy();
-    }
-
-    // Ensure manor sprites are loaded before first render
-    if (this._manorSprites.length === 0) {
-      const spriteUrls = [
-        '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784363719.png',
-        '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784433859.png',
-        '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784503776.png',
-      ];
-      const results = await Promise.allSettled(spriteUrls.map(url => loadSprite(url)));
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          this._manorSprites.push(result.value);
-          console.log('[Sprite] Manor loaded:', result.value.w, '×', result.value.h);
-        } else {
-          console.warn('[Sprite] Failed to load manor sprite:', result.reason);
-        }
+  private async _loadManorSprites(): Promise<void> {
+    if (this._manorSprites.length > 0) return;
+    const spriteUrls = [
+      '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784363719.png',
+      '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784433859.png',
+      '/sprites/pixellab-medieval-manor-house-3-4-proje-1772784503776.png',
+    ];
+    const results = await Promise.allSettled(spriteUrls.map(url => loadSprite(url)));
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        this._manorSprites.push(result.value);
+        console.log('[Sprite] Manor loaded:', result.value.w, '×', result.value.h);
+      } else {
+        console.warn('[Sprite] Failed to load manor sprite:', result.reason);
       }
     }
+  }
 
-    this._setupScreen = new SetupScreen();
-    const result = await this._setupScreen.show();
-    this._playerHouse = result.selectedHouse;
-    this._initializeGame(result.seed);
-    this._setupScreen.destroy();
-    this._setupScreen = null;
-
-    // Center camera on player's duchy capital
+  /**
+   * Called from React via custom event when the player starts a game.
+   */
+  private _startGame(seed: number): void {
+    this._initializeGame(seed);
     this._centerOnPlayerDuchy();
+    this._pushStateToStore();
+  }
+
+  private _pushStateToStore(): void {
+    if (this._state) {
+      useGameStore.getState().setGameState(this._state, this._regionGrid);
+    }
   }
 
   private _centerOnPlayerDuchy(): void {
@@ -429,13 +434,13 @@ export class MapScene extends Phaser.Scene {
       this._lastPinchDist = 0;
     });
 
-    // Wire up mobile HTML buttons
+    // Wire up mobile HTML buttons (if present)
     const btnRegenerate = document.getElementById('btn-regenerate');
     const btnElevation = document.getElementById('btn-elevation');
     const btnMoisture = document.getElementById('btn-moisture');
 
     btnRegenerate?.addEventListener('click', () => {
-      this._showSetupAndStart();
+      useUIStore.getState().setPhase('house-select');
     });
     btnElevation?.addEventListener('click', () => {
       this._activeOverlay = this._activeOverlay === 'elevation' ? 'none' : 'elevation';
@@ -461,7 +466,7 @@ export class MapScene extends Phaser.Scene {
       ? this._regionGrid[sourceIdx]
       : this._regionGrid[screenIdx];
 
-    this._ui.showRegionInfo(region);
+    useUIStore.getState().setSelectedRegion(region >= 0 ? region : null);
   }
 
   private _updateHoveredRegion(): void {
@@ -578,11 +583,6 @@ export class MapScene extends Phaser.Scene {
     });
 
     this._renderMap();
-
-    // Update UI
-    if (this._ui && this._regionGrid) {
-      this._ui.setState(this._state, this._regionGrid);
-    }
   }
 
   /**

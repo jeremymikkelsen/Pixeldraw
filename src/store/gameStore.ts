@@ -20,6 +20,7 @@ export interface GameStoreState {
   playerEconomy: DuchyEconomy | null;
   season: Season | null;
   year: number;
+  zoom: number;
 
   // Callbacks into Phaser
   onEndTurn: (() => void) | null;
@@ -46,6 +47,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   playerEconomy: null,
   season: null,
   year: 1,
+  zoom: 1,
   onEndTurn: null,
   onNewGame: null,
 

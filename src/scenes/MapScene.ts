@@ -354,6 +354,12 @@ export class MapScene extends Phaser.Scene {
       this.game.canvas.style.cursor = 'default';
     }
 
+    // Push zoom to React store (throttled — only when changed enough to display differently)
+    const displayZoom = Math.round(cam.zoom * 100) / 100;
+    if (displayZoom !== useGameStore.getState().zoom) {
+      useGameStore.setState({ zoom: displayZoom });
+    }
+
     // Animate rivers
     if (this._riverAnimator) {
       const overlayBuf = this._activeOverlay === 'moisture' ? this._moistureOverlay

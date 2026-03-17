@@ -40,7 +40,7 @@ function ShieldCrest({ color, initial }: { color: string; initial: string }) {
 }
 
 export function GameHUD() {
-  const { playerHouse, playerDuchy, playerEconomy, season, year, onEndTurn } = useGameStore();
+  const { playerHouse, playerDuchy, playerEconomy, season, year, zoom, onEndTurn } = useGameStore();
   const { setOpenPanel } = useUIStore();
 
   if (!playerHouse || !playerDuchy || season === null || !playerEconomy) return null;
@@ -82,10 +82,10 @@ export function GameHUD() {
         <span className="hud-clickable" onClick={() => setOpenPanel('population')}>👥 {population.total}</span>
       </div>
 
-      {/* Season + Year */}
+      {/* Season + Year + Zoom */}
       <div className="hud-season">
         <span><span className="season-icon">{seasonIcon}</span>{seasonName(season)}</span>
-        <span className="season-year">Year {year}</span>
+        <span className="season-year">Year {year} · {zoom.toFixed(2)}x</span>
       </div>
 
       {/* Build */}

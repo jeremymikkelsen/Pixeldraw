@@ -599,6 +599,14 @@ export class MapScene extends Phaser.Scene {
     // Roads between duchy capitals (pass riverMask for bridge detection)
     const roadMask = roadRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, this._state.roads, riverMask);
 
+    // Capture bridge pixel colors NOW (before river animation overwrites them)
+    const bridgePixelColors: { idx: number; color: number }[] = [];
+    for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
+      if (roadRenderer.bridgeMask[bi]) {
+        bridgePixelColors.push({ idx: bi, color: pixels[bi] });
+      }
+    }
+
     // Structure placement (before trees so trees grow around buildings)
     const structureRenderer = new StructureRenderer();
     const { structures, mask: structureMask } = structureRenderer.placeStructures(
@@ -636,23 +644,23 @@ export class MapScene extends Phaser.Scene {
     // Structures on top of duchy borders (3/4 perspective with ground shadows)
     const buildingMask = structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
 
+    // Capture building pixel colors NOW (before river animation overwrites them)
+    const buildingPixelColors: { idx: number; color: number }[] = [];
+    for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
+      if (buildingMask[bi]) {
+        buildingPixelColors.push({ idx: bi, color: pixels[bi] });
+      }
+    }
+
+    // Combine bridge + building pixels for per-frame restoration above river animation
+    this._buildingPixels = [...bridgePixelColors, ...buildingPixelColors];
+
     // Wire building mask into river animator so rivers don't overdraw buildings
     riverAnimator.buildingMask = buildingMask;
 
-    // Initial animation frame
+    // Initial animation frame — then restore buildings/bridges on top
     riverAnimator.animate(pixels, 0);
     coastalRenderer.animate(pixels, 0);
-
-    // Restore building/bridge pixels after initial animation
-    // Collect building + bridge pixels so they can be restored each frame above river animation
-    this._buildingPixels = [];
-    const N = PIXEL_RESOLUTION;
-    for (let i = 0; i < N * N; i++) {
-      if (buildingMask[i] || roadRenderer.bridgeMask[i]) {
-        this._buildingPixels.push({ idx: i, color: pixels[i] });
-      }
-    }
-    // Restore after initial animate
     for (const bp of this._buildingPixels) {
       pixels[bp.idx] = bp.color;
     }

@@ -83,21 +83,66 @@ export class RoadRenderer {
     noise: (x: number, y: number) => number,
     riverMask: Uint8Array | null,
   ): void {
-    const dx = Math.abs(x1 - x0);
-    const dy = Math.abs(y1 - y0);
-    const sx = x0 < x1 ? 1 : -1;
-    const sy = y0 < y1 ? 1 : -1;
-    let err = dx - dy;
-    let cx = x0, cy = y0;
+    const rawDX = x1 - x0;
+    const rawDY = y1 - y0;
+    const absDX = Math.abs(rawDX);
+    const absDY = Math.abs(rawDY);
+    const sx = rawDX > 0 ? 1 : (rawDX < 0 ? -1 : 0);
+    const sy = rawDY > 0 ? 1 : (rawDY < 0 ? -1 : 0);
     const r = (ROAD_WIDTH - 1) >> 1;
 
+    // -----------------------------------------------------------------------
+    // Pre-scan: walk the centerline (no thickness) to classify parallel vs crossing.
+    // If > 40% of centerline steps overlap the river mask, treat as parallel.
+    // -----------------------------------------------------------------------
+    let overlapSteps = 0, totalSteps = 0;
+    if (riverMask !== null) {
+      let cx = x0, cy = y0;
+      let err = absDX - absDY;
+      while (true) {
+        if (cx >= 0 && cy >= 0 && cx < N && cy < N && riverMask[cy * N + cx]) overlapSteps++;
+        totalSteps++;
+        if (cx === x1 && cy === y1) break;
+        const e2 = 2 * err;
+        if (e2 > -absDY) { err -= absDY; cx += sx; }
+        if (e2 < absDX)  { err += absDX; cy += sy; }
+      }
+    } else {
+      // Count total steps for use below
+      let cx = x0, cy = y0;
+      let err = absDX - absDY;
+      while (true) {
+        totalSteps++;
+        if (cx === x1 && cy === y1) break;
+        const e2 = 2 * err;
+        if (e2 > -absDY) { err -= absDY; cx += sx; }
+        if (e2 < absDX)  { err += absDX; cy += sy; }
+      }
+    }
+
+    const isParallel = totalSteps > 3 && overlapSteps / totalSteps > 0.4;
+
+    // Perpendicular offset for parallel sections (right-hand side of travel direction)
+    const segLen = Math.sqrt(rawDX * rawDX + rawDY * rawDY) || 1;
+    const offX = isParallel ? Math.round(-rawDY / segLen * 5) : 0;
+    const offY = isParallel ? Math.round(rawDX / segLen * 5) : 0;
+
+    // -----------------------------------------------------------------------
+    // Main draw pass
+    // -----------------------------------------------------------------------
+    let cx = x0, cy = y0;
+    let err = absDX - absDY;
+
     while (true) {
-      // Check if any pixel in this stamp overlaps a river (more robust than center-only check)
+      const drawCX = cx + offX;
+      const drawCY = cy + offY;
+
+      // Bridge detection: only for non-parallel segments, check stamp overlap with river
       let isBridge = false;
-      if (riverMask !== null) {
+      if (!isParallel && riverMask !== null) {
         outer: for (let oy = -r; oy <= r; oy++) {
           for (let ox = -r; ox <= r; ox++) {
-            const checkX = cx + ox, checkY = cy + oy;
+            const checkX = drawCX + ox, checkY = drawCY + oy;
             if (checkX >= 0 && checkY >= 0 && checkX < N && checkY < N
                 && riverMask[checkY * N + checkX]) {
               isBridge = true;
@@ -108,20 +153,18 @@ export class RoadRenderer {
       }
 
       for (let oy = -r; oy <= r; oy++) {
-        const py = cy + oy;
+        const py = drawCY + oy;
         if (py < 0 || py >= N) continue;
         for (let ox = -r; ox <= r; ox++) {
-          const px = cx + ox;
+          const px = drawCX + ox;
           if (px < 0 || px >= N) continue;
           const idx = py * N + px;
 
           if (isBridge) {
-            // Bridge: deck or parapet
             const isEdge = Math.abs(ox) === r || Math.abs(oy) === r;
             pixels[idx] = isEdge ? BRIDGE_PARAPET : BRIDGE_DECK;
             bridgeMask[idx] = 1;
           } else {
-            // Normal road fill
             const n = noise(px * 0.15, py * 0.15);
             const ci = Math.abs(n) < 0.2 ? 0
               : n < -0.4 ? 3
@@ -136,8 +179,8 @@ export class RoadRenderer {
 
       if (cx === x1 && cy === y1) break;
       const e2 = 2 * err;
-      if (e2 > -dy) { err -= dy; cx += sx; }
-      if (e2 < dx) { err += dx; cy += sy; }
+      if (e2 > -absDY) { err -= absDY; cx += sx; }
+      if (e2 < absDX)  { err += absDX; cy += sy; }
     }
   }
 }

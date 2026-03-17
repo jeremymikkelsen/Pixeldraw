@@ -253,6 +253,9 @@ export class GroundRenderer {
     // Per-pixel ocean clip: index 0 = ocean, 1 = water
     const tg = this.terrainGrid;
 
+    // How far to extrapolate river mouth beyond last region center (pixels)
+    const MOUTH_EXTEND = 160;
+
     for (const path of hydro.rivers) {
       for (let si = 0; si < path.length - 1; si++) {
         const rA = path[si];
@@ -261,8 +264,8 @@ export class GroundRenderer {
         // World coords → pixel coords
         const x0 = Math.floor(points[rA].x / scale);
         const y0 = Math.floor(points[rA].y / scale);
-        const x1 = Math.floor(points[rB].x / scale);
-        const y1 = Math.floor(points[rB].y / scale);
+        let x1 = Math.floor(points[rB].x / scale);
+        let y1 = Math.floor(points[rB].y / scale);
 
         // Width from flow accumulation (1–10 pixels), log-space normalization, 10% steps
         const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[rA], hydro.flowAccumulation[rB]);
@@ -272,6 +275,16 @@ export class GroundRenderer {
         // Color: darker for wider rivers
         const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));
         const color = RIVER_COLORS[ci];
+
+        // For the last segment of each river path, extrapolate beyond the endpoint
+        // in the same flow direction so the river reaches the ocean boundary.
+        // The terrain clip (terrainGrid === 0) stops drawing at deep ocean naturally.
+        if (si === path.length - 2) {
+          const fdx = x1 - x0, fdy = y1 - y0;
+          const flen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
+          x1 = Math.round(x1 + (fdx / flen) * MOUTH_EXTEND);
+          y1 = Math.round(y1 + (fdy / flen) * MOUTH_EXTEND);
+        }
 
         // Bresenham line with thickness, mark river mask, clip ocean pixels
         this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color, riverMask, tg);

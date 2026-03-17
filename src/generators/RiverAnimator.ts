@@ -127,8 +127,8 @@ export class RiverAnimator {
 
         const x0 = Math.floor(points[rA].x / scale);
         const y0 = Math.floor(points[rA].y / scale);
-        const x1 = Math.floor(points[rB].x / scale);
-        const y1 = Math.floor(points[rB].y / scale);
+        let x1 = Math.floor(points[rB].x / scale);
+        let y1 = Math.floor(points[rB].y / scale);
 
         // Flow direction (normalized)
         const fdx = x1 - x0;
@@ -136,6 +136,13 @@ export class RiverAnimator {
         const flen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
         const flowDirX = fdx / flen;
         const flowDirY = fdy / flen;
+
+        // For the last segment, extrapolate 160px beyond the endpoint so the
+        // animated river reaches the ocean boundary (terrain clip stops it there).
+        if (si === path.length - 2) {
+          x1 = Math.round(x1 + flowDirX * 160);
+          y1 = Math.round(y1 + flowDirY * 160);
+        }
 
         // Average elevation of segment (used for rapids/waterfall detection)
         const elevation = (topo.elevation[rA] + topo.elevation[rB]) / 2;

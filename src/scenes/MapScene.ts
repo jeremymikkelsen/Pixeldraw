@@ -85,6 +85,11 @@ export class MapScene extends Phaser.Scene {
   // Pre-loaded manor sprites (from PNGs) — one per duchy style
   private _manorSprites: LoadedSprite[] = [];
 
+  // Crash diagnostics
+  private _crashed = false;
+  private _lastFrameTime = 0;
+  private _frameCount = 0;
+
   constructor() {
     super({ key: 'MapScene' });
   }
@@ -245,6 +250,36 @@ export class MapScene extends Phaser.Scene {
 
     // Load manor sprites eagerly
     this._loadManorSprites();
+
+    // WebGL context loss detection
+    const canvas = this.game.canvas;
+    canvas.addEventListener('webglcontextlost', (e) => {
+      this._showCrashBanner('WebGL context lost', {
+        reason: 'GPU driver reset or resource exhaustion',
+        frame: this._frameCount,
+        zoom: this.cameras.main.zoom,
+        scrollX: this.cameras.main.scrollX,
+        scrollY: this.cameras.main.scrollY,
+      });
+      e.preventDefault(); // allow potential context restore
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      console.warn('[Crash] WebGL context restored — re-rendering');
+      this._removeCrashBanner();
+      this._crashed = false;
+      if (this._state) this._renderMap();
+    });
+
+    // Global error handler for uncaught errors in render pipeline
+    window.addEventListener('error', (e) => {
+      if (this._crashed) return;
+      this._showCrashBanner('Uncaught error', {
+        message: e.message,
+        source: e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : 'unknown',
+        frame: this._frameCount,
+        zoom: this.cameras.main?.zoom,
+      });
+    });
   }
 
   private async _loadManorSprites(): Promise<void> {
@@ -294,6 +329,26 @@ export class MapScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
+    if (this._crashed) return;
+    this._frameCount++;
+    this._lastFrameTime = time;
+
+    try {
+    this._updateInner(time, delta);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack?.split('\n').slice(0, 5).join('\n') : '';
+      this._showCrashBanner('update() error', {
+        message: msg,
+        stack,
+        frame: this._frameCount,
+        zoom: this.cameras.main?.zoom,
+        delta,
+      });
+    }
+  }
+
+  private _updateInner(time: number, delta: number): void {
     const cam = this.cameras.main;
     const dt = delta / 1000;
     const speed = SCROLL_SPEED / cam.zoom;
@@ -611,6 +666,22 @@ export class MapScene extends Phaser.Scene {
    * Re-render the map from current game state (called on init and each turn).
    */
   private _renderMap(): void {
+    try {
+      this._renderMapInner();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack?.split('\n').slice(0, 6).join('\n') : '';
+      this._showCrashBanner('_renderMap() error', {
+        message: msg,
+        stack,
+        seed: this._state?.seed,
+        season: this._state?.season,
+        turn: this._state?.turn,
+      });
+    }
+  }
+
+  private _renderMapInner(): void {
     const { topo, hydro, seed, season } = this._state;
 
     // Ground with seasonal palettes
@@ -744,5 +815,58 @@ export class MapScene extends Phaser.Scene {
       this.mapSprite = this.add.sprite(MAP_SIZE / 2, MAP_SIZE / 2, texKey);
       this.mapSprite.setDisplaySize(MAP_SIZE, MAP_SIZE);
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Crash diagnostics
+  // -----------------------------------------------------------------------
+  private _showCrashBanner(title: string, info: Record<string, unknown>): void {
+    this._crashed = true;
+    console.error(`[CRASH] ${title}`, info);
+
+    // Remove existing banner if any
+    this._removeCrashBanner();
+
+    const banner = document.createElement('div');
+    banner.id = 'crash-banner';
+    banner.style.cssText = `
+      position:fixed; bottom:60px; left:50%; transform:translateX(-50%);
+      z-index:9999; background:rgba(180,30,30,0.92); color:#fff;
+      padding:16px 24px; border-radius:8px; font-family:monospace;
+      font-size:12px; max-width:600px; width:90vw;
+      box-shadow:0 4px 24px rgba(0,0,0,0.6); pointer-events:auto;
+      line-height:1.5; white-space:pre-wrap; word-break:break-word;
+    `;
+
+    const timestamp = new Date().toISOString();
+    const entries = Object.entries(info)
+      .map(([k, v]) => `  ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
+      .join('\n');
+
+    banner.textContent = `RENDERER CRASH — ${title}\n${timestamp}\n${entries}`;
+
+    // Copy button
+    const copyBtn = document.createElement('button');
+    copyBtn.textContent = 'Copy';
+    copyBtn.style.cssText = `
+      display:block; margin-top:8px; padding:4px 12px;
+      background:rgba(255,255,255,0.2); border:1px solid rgba(255,255,255,0.4);
+      border-radius:4px; color:#fff; font-family:monospace; font-size:11px;
+      cursor:pointer;
+    `;
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(banner.textContent ?? '').then(() => {
+        copyBtn.textContent = 'Copied!';
+        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+      });
+    });
+    banner.appendChild(copyBtn);
+
+    document.body.appendChild(banner);
+  }
+
+  private _removeCrashBanner(): void {
+    document.getElementById('crash-banner')?.remove();
+    this._crashed = false;
   }
 }

@@ -125,9 +125,8 @@ export class MapScene extends Phaser.Scene {
     };
     window.addEventListener('pixeldraw:start-game', this._startGameHandler);
 
-    // Camera setup
+    // Camera setup — no setBounds so panning works at all zoom levels
     const cam = this.cameras.main;
-    cam.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
     cam.centerOn(MAP_SIZE / 2, MAP_SIZE / 2);
 
     // Input — zoom keys (regular keyboard + numpad)
@@ -330,6 +329,17 @@ export class MapScene extends Phaser.Scene {
         cam.scrollY += edgeSpeed * (1 - (h - my) / EDGE_PAN_ZONE) * dt;
       }
     }
+
+    // Soft camera clamping — keep map center reachable but allow edge panning at any zoom
+    const viewW = cam.width / cam.zoom;
+    const viewH = cam.height / cam.zoom;
+    const margin = 100; // pixels of world space past the map edge
+    const minX = -viewW / 2 - margin;
+    const minY = -viewH / 2 - margin;
+    const maxX = MAP_SIZE - viewW / 2 + margin;
+    const maxY = MAP_SIZE - viewH / 2 + margin;
+    cam.scrollX = Math.max(minX, Math.min(maxX, cam.scrollX));
+    cam.scrollY = Math.max(minY, Math.min(maxY, cam.scrollY));
 
     // Space key cursor management
     if (this._spaceKey.isDown && !this._isSpacePanning) {

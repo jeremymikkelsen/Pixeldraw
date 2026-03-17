@@ -155,8 +155,8 @@ export class RiverAnimator {
           (px, py, isCenterLine) => {
             const idx = py * N + px;
             if (visited[idx]) return;
-            // Skip ocean/water pixels — river animation stays on land
-            if (terrainGrid && (terrainGrid[idx] === 0 || terrainGrid[idx] === 1)) return;
+            // Skip deep ocean pixels — allow rivers over shallow water to reach the shore
+            if (terrainGrid && terrainGrid[idx] === 0) return;
             visited[idx] = 1;
 
             // Phase for wave animation

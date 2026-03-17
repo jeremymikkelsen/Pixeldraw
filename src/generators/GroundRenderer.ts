@@ -305,8 +305,8 @@ export class GroundRenderer {
           const px = cx + ox;
           if (px < 0 || px >= N) continue;
           const pidx = py * N + px;
-          // Skip ocean/water pixels so rivers don't extend into the sea
-          if (terrainClip && (terrainClip[pidx] === 0 || terrainClip[pidx] === 1)) continue;
+          // Skip deep ocean pixels; allow rivers over shallow water so they reach the shore
+          if (terrainClip && terrainClip[pidx] === 0) continue;
           pixels[pidx] = color;
           if (mask) mask[pidx] = 1;
         }

@@ -148,24 +148,39 @@ export class MapScene extends Phaser.Scene {
       this._activeOverlay = this._activeOverlay === 'airMoisture' ? 'none' : 'airMoisture';
     });
 
-    // Mouse wheel zoom centered on cursor
-    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
-      const pointer = this.input.activePointer;
+    // Wheel / trackpad / pinch input — handled via native DOM event for full WheelEvent access.
+    // ctrlKey=true  → Mac trackpad pinch (slow zoom centered on cursor)
+    // deltaMode=0   → trackpad two-finger scroll (pan)
+    // deltaMode≥1   → mouse scroll wheel (fast zoom centered on cursor)
+    this.game.canvas.addEventListener('wheel', (e: WheelEvent) => {
+      e.preventDefault();
       const cam = this.cameras.main;
-      const zoomBefore = cam.zoom;
+      const rect = this.game.canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      const cy = e.clientY - rect.top;
 
-      // Apply zoom
-      const zoomDelta = dy > 0 ? (1 - ZOOM_SPEED * 3) : (1 + ZOOM_SPEED * 3);
-      const zoomAfter = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomBefore * zoomDelta));
-      cam.zoom = zoomAfter;
+      const applyZoom = (delta: number, speed: number) => {
+        const zoomBefore = cam.zoom;
+        const zoomDelta = delta > 0 ? (1 - speed) : (1 + speed);
+        const zoomAfter = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomBefore * zoomDelta));
+        cam.zoom = zoomAfter;
+        cam.scrollX += (cx - cam.width * 0.5) * (1 / zoomBefore - 1 / zoomAfter);
+        cam.scrollY += (cy - cam.height * 0.5) * (1 / zoomBefore - 1 / zoomAfter);
+      };
 
-      // Phaser camera world coords: worldX = (screenX - w/2) / zoom + scrollX + w/2
-      // Correction = (screenX - w/2) * (1/zoomBefore - 1/zoomAfter)
-      const dx = (pointer.x - cam.width * 0.5) * (1 / zoomBefore - 1 / zoomAfter);
-      const dv = (pointer.y - cam.height * 0.5) * (1 / zoomBefore - 1 / zoomAfter);
-      cam.scrollX += dx;
-      cam.scrollY += dv;
-    });
+      if (e.ctrlKey) {
+        // Trackpad pinch — gentler speed than mouse wheel
+        applyZoom(e.deltaY, ZOOM_SPEED);
+      } else if (e.deltaMode === 0) {
+        // Trackpad two-finger scroll → pan (deltaX + deltaY both used)
+        const scale = 1 / cam.zoom;
+        cam.scrollX += e.deltaX * scale;
+        cam.scrollY += e.deltaY * scale;
+      } else {
+        // Mouse scroll wheel → zoom (original speed)
+        applyZoom(e.deltaY, ZOOM_SPEED * 3);
+      }
+    }, { passive: false });
 
     // Space+drag panning — mousedown while space held
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -197,8 +212,9 @@ export class MapScene extends Phaser.Scene {
       }
     });
 
-    // Touch / mobile support
-    this._isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    // Touch / mobile support — use pointer media query so MacBook trackpads (fine pointer)
+    // are not treated as touch devices; only real touchscreens (coarse pointer) get touch controls.
+    this._isTouchDevice = window.matchMedia('(pointer: coarse)').matches;
     this._setupTouchControls();
 
     // Click to show region info

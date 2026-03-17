@@ -8,6 +8,7 @@ import type { GameState } from '../state/GameState';
 import type { Duchy, HouseData } from '../state/Duchy';
 import type { Season } from '../state/Season';
 import type { DuchyEconomy, RationLevel, DevelopmentMode, ResourceType, LaborAssignment } from '../state/Economy';
+import { saveGame as persistSave, loadGame as loadSave, hasSavedGame, deleteSave, type SaveData } from '../state/SaveLoad';
 
 export interface GameStoreState {
   // Game session state (null = not in game)
@@ -22,14 +23,27 @@ export interface GameStoreState {
   year: number;
   zoom: number;
 
+  // Save state
+  hasSave: boolean;
+
   // Callbacks into Phaser
   onEndTurn: (() => void) | null;
   onNewGame: (() => void) | null;
+  onLoadGame: ((save: SaveData) => void) | null;
 
   // Actions
   setGameState: (state: GameState, regionGrid: Uint16Array | null) => void;
-  setCallbacks: (onEndTurn: () => void, onNewGame: () => void) => void;
+  setCallbacks: (
+    onEndTurn: () => void,
+    onNewGame: () => void,
+    onLoadGame: (save: SaveData) => void,
+  ) => void;
   clearGame: () => void;
+
+  // Save/Load
+  saveCurrentGame: () => void;
+  loadSavedGame: () => void;
+  clearSavedGame: () => void;
 
   // Economic actions
   setRationLevel: (level: RationLevel) => void;
@@ -48,8 +62,10 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   season: null,
   year: 1,
   zoom: 1,
+  hasSave: hasSavedGame(),
   onEndTurn: null,
   onNewGame: null,
+  onLoadGame: null,
 
   setGameState: (gameState, regionGrid) => {
     const playerDuchy = gameState.duchies[gameState.playerDuchy] ?? null;
@@ -65,7 +81,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     });
   },
 
-  setCallbacks: (onEndTurn, onNewGame) => set({ onEndTurn, onNewGame }),
+  setCallbacks: (onEndTurn, onNewGame, onLoadGame) => set({ onEndTurn, onNewGame, onLoadGame }),
 
   clearGame: () => set({
     gameState: null,
@@ -76,6 +92,37 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
     season: null,
     year: 1,
   }),
+
+  // ─── Save/Load ──────────────────────────────────────────────────────────────
+
+  saveCurrentGame: () => {
+    const { gameState } = get();
+    if (!gameState) return;
+    persistSave(
+      gameState.seed,
+      gameState.mapSize,
+      gameState.playerDuchy,
+      gameState.turn,
+      gameState.season,
+      gameState.year,
+      gameState.economies,
+    );
+    set({ hasSave: true });
+  },
+
+  loadSavedGame: () => {
+    const save = loadSave();
+    if (!save) return;
+    const { onLoadGame } = get();
+    if (onLoadGame) {
+      onLoadGame(save);
+    }
+  },
+
+  clearSavedGame: () => {
+    deleteSave();
+    set({ hasSave: false });
+  },
 
   // ─── Economic actions ──────────────────────────────────────────────────────
 

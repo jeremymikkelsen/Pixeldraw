@@ -6,7 +6,8 @@ import { CoastalRenderer } from '../generators/CoastalRenderer';
 import { MountainRenderer } from '../generators/MountainRenderer';
 import { RiverDeltaRenderer } from '../generators/RiverDeltaRenderer';
 import { StructureRenderer } from '../generators/StructureRenderer';
-import { GameState, createGameState, advanceTurn } from '../state/GameState';
+import { GameState, createGameState, loadGameState, advanceTurn } from '../state/GameState';
+import type { SaveData } from '../state/SaveLoad';
 import { renderDuchies, renderDuchyBordersOnTop } from '../renderers/DuchyRenderer';
 import { RoadRenderer } from '../generators/RoadRenderer';
 import { useGameStore } from '../store/gameStore';
@@ -113,12 +114,18 @@ export class MapScene extends Phaser.Scene {
         cam.once('camerafadeoutcomplete', () => {
           this._renderMap();
           this._pushStateToStore();
+          // Auto-save after each turn
+          useGameStore.getState().saveCurrentGame();
           cam.fadeIn(400, 0, 0, 0);
         });
       },
       // onNewGame
       () => {
         useUIStore.getState().setPhase('house-select');
+      },
+      // onLoadGame
+      (save: SaveData) => {
+        this._loadFromSave(save);
       },
     );
 
@@ -307,6 +314,25 @@ export class MapScene extends Phaser.Scene {
     this._initializeGame(seed);
     this._centerOnPlayerDuchy();
     this._pushStateToStore();
+    // Save initial state
+    useGameStore.getState().saveCurrentGame();
+  }
+
+  /**
+   * Load a game from save data — regenerate terrain from seed, restore mutable state.
+   */
+  private _loadFromSave(save: SaveData): void {
+    this._state = loadGameState(save);
+    console.log('[Load] Game restored', {
+      seed: save.seed,
+      turn: save.turn,
+      year: save.year,
+      season: save.season,
+    });
+    this._renderMap();
+    this._centerOnPlayerDuchy();
+    this._pushStateToStore();
+    useUIStore.getState().setPhase('playing');
   }
 
   private _pushStateToStore(): void {

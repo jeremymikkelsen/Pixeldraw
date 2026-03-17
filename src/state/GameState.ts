@@ -10,9 +10,11 @@ import { Duchy } from './Duchy';
 import { generateDuchies } from './DuchyGenerator';
 import { generateRoads, RoadSegment } from '../generators/RoadGenerator';
 import { DuchyEconomy, createDuchyEconomy, processEconomyTurn, countTerrain } from './Economy';
+import type { SaveData } from './SaveLoad';
 
 export interface GameState {
   seed: number;
+  mapSize: number;
   turn: number;
   season: Season;
   year: number;
@@ -34,7 +36,7 @@ export interface GameState {
 }
 
 /**
- * Create a fully initialized GameState from a seed.
+ * Create a fully initialized GameState from a seed (new game).
  * @param playerHouse - index into HOUSES[] for the player's chosen house
  */
 export function createGameState(seed: number, mapSize: number, playerHouse: number = 0): GameState {
@@ -48,6 +50,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
 
   return {
     seed,
+    mapSize,
     turn: 0,
     season: Season.Spring,
     year: 1,
@@ -58,6 +61,32 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
     regionToDuchy,
     roads,
     economies,
+  };
+}
+
+/**
+ * Restore a GameState from save data.
+ * Regenerates terrain/duchies/roads from seed, then applies saved mutable state.
+ */
+export function loadGameState(save: SaveData): GameState {
+  const topo = new TopographyGenerator(save.mapSize, save.seed);
+  const hydro = new HydrologyGenerator(topo, save.seed);
+  const { duchies, regionToDuchy } = generateDuchies(topo, hydro, save.seed);
+  const roads = generateRoads(topo, hydro, duchies);
+
+  return {
+    seed: save.seed,
+    mapSize: save.mapSize,
+    turn: save.turn,
+    season: save.season,
+    year: save.year,
+    playerDuchy: save.playerDuchy,
+    topo,
+    hydro,
+    duchies,
+    regionToDuchy,
+    roads,
+    economies: save.economies,
   };
 }
 

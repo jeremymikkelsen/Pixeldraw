@@ -62,6 +62,9 @@ export class MapScene extends Phaser.Scene {
   private _state!: GameState;
   private _ui!: UIManager;
 
+  // Building + bridge pixels to restore after river animation each frame
+  private _buildingPixels: { idx: number; color: number }[] = [];
+
   // Pre-loaded manor sprites (from PNGs) — one per duchy style
   private _manorSprites: LoadedSprite[] = [];
 
@@ -217,6 +220,10 @@ export class MapScene extends Phaser.Scene {
         this._riverAnimator.animate(this._pixels, time);
         if (this._coastalRenderer) {
           this._coastalRenderer.animate(this._pixels, time);
+        }
+        // Restore building/bridge pixels so they always render above rivers and coast
+        for (const bp of this._buildingPixels) {
+          this._pixels[bp.idx] = bp.color;
         }
       }
 
@@ -468,20 +475,20 @@ export class MapScene extends Phaser.Scene {
       renderDuchies(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION);
     }
 
-    // Beaches, ocean sparkles, sea stacks
+    // Static rivers — rendered BEFORE coastal so riverMask can suppress beach/waves at river mouths
+    const roadRenderer = new RoadRenderer();
+    const riverMask = renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
+
+    // Beaches, ocean sparkles, sea stacks (pass riverMask to suppress sand/waves at river mouths)
     const coastalRenderer = new CoastalRenderer();
-    coastalRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed, season);
+    coastalRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed, season, riverMask);
 
     // River deltas and harbors
     const deltaRenderer = new RiverDeltaRenderer();
     deltaRenderer.render(pixels, topo, hydro, PIXEL_RESOLUTION, seed);
 
-    // Static rivers
-    renderer.renderRivers(pixels, topo, hydro, PIXEL_RESOLUTION);
-
-    // Roads between duchy capitals
-    const roadRenderer = new RoadRenderer();
-    const roadMask = roadRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, this._state.roads);
+    // Roads between duchy capitals (pass riverMask for bridge detection)
+    const roadMask = roadRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, this._state.roads, riverMask);
 
     // Structure placement (before trees so trees grow around buildings)
     const structureRenderer = new StructureRenderer();
@@ -505,14 +512,12 @@ export class MapScene extends Phaser.Scene {
     this._extrusionMap = mountainRenderer.extrusionMap;
     this._screenToSource = mountainRenderer.screenToSource;
 
-    // River animator
+    // River animator (buildingMask set after renderSprites below)
     const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask);
     riverAnimator.extrusionMap = mountainRenderer.extrusionMap;
-    riverAnimator.animate(pixels, 0);
 
     // Coastal animation
     coastalRenderer.extrusionMap = mountainRenderer.extrusionMap;
-    coastalRenderer.animate(pixels, 0);
 
     // Duchy borders over trees and mountains
     if (renderer.regionGrid) {
@@ -520,7 +525,28 @@ export class MapScene extends Phaser.Scene {
     }
 
     // Structures on top of duchy borders (3/4 perspective with ground shadows)
-    structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
+    const buildingMask = structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
+
+    // Wire building mask into river animator so rivers don't overdraw buildings
+    riverAnimator.buildingMask = buildingMask;
+
+    // Initial animation frame
+    riverAnimator.animate(pixels, 0);
+    coastalRenderer.animate(pixels, 0);
+
+    // Restore building/bridge pixels after initial animation
+    // Collect building + bridge pixels so they can be restored each frame above river animation
+    this._buildingPixels = [];
+    const N = PIXEL_RESOLUTION;
+    for (let i = 0; i < N * N; i++) {
+      if (buildingMask[i] || roadRenderer.bridgeMask[i]) {
+        this._buildingPixels.push({ idx: i, color: pixels[i] });
+      }
+    }
+    // Restore after initial animate
+    for (const bp of this._buildingPixels) {
+      pixels[bp.idx] = bp.color;
+    }
 
     // Store refs
     this._pixels = pixels;

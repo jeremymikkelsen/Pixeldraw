@@ -92,6 +92,7 @@ export class CoastalRenderer {
     resolution: number,
     seed: number,
     season: Season = Season.Summer,
+    riverMask?: Uint8Array,
   ): void {
     this._season = season;
     const rng = mulberry32(seed ^ 0xbeac0000);
@@ -220,6 +221,9 @@ export class CoastalRenderer {
         const i = py * N + px;
         if (isOcean[i]) continue;
 
+        // Don't paint sand over rivers
+        if (riverMask && riverMask[i]) continue;
+
         const dist = oceanDist[i];
         if (dist > BEACH_WIDTH) continue;
 
@@ -245,6 +249,16 @@ export class CoastalRenderer {
         // Apply same directional lighting as ground
         const brightness = 0.85 + detailN * 0.15;
         pixels[i] = applyBrightness(rgb, brightness);
+      }
+    }
+
+    // ----------------------------------------------------------------
+    // Fix 1px gap: paint wet sand on ocean pixels directly adjacent to land
+    // ----------------------------------------------------------------
+    const wetSand = WET_SAND_BY_SEASON[season];
+    for (let i = 0; i < N * N; i++) {
+      if (isOcean[i] && landDist[i] === 0) {
+        pixels[i] = wetSand;
       }
     }
 
@@ -311,6 +325,8 @@ export class CoastalRenderer {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
         if (!isOcean[i]) continue;
+        // Don't animate waves at river mouth pixels
+        if (riverMask && riverMask[i]) continue;
 
         const dist = landDist[i];
         if (dist > WAVE_ZONE) continue;

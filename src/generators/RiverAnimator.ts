@@ -76,6 +76,10 @@ export class RiverAnimator {
   private _N: number;
   private _treeMask: Uint8Array | null = null;
   extrusionMap: Int16Array | null = null;
+  private _visited: Uint8Array = new Uint8Array(0);
+  buildingMask: Uint8Array | null = null;
+
+  get riverMask(): Uint8Array { return this._visited; }
 
   constructor(
     topo: TopographyGenerator,
@@ -111,12 +115,17 @@ export class RiverAnimator {
     const logRange = Math.log(maxAccum) - logMin;
 
     // Set to deduplicate pixels (rivers can overlap at confluences)
-    const visited = new Uint8Array(N * N);
+    this._visited = new Uint8Array(N * N);
+    const visited = this._visited;
 
     for (const path of hydro.rivers) {
       for (let si = 0; si < path.length - 1; si++) {
         const rA = path[si];
         const rB = path[si + 1];
+
+        // Skip segments flowing into ocean/water
+        const terrainB = topo.terrainType[rB];
+        if (terrainB === 'ocean' || terrainB === 'water') continue;
 
         const x0 = Math.floor(points[rA].x / scale);
         const y0 = Math.floor(points[rA].y / scale);
@@ -209,6 +218,9 @@ export class RiverAnimator {
 
       // Skip pixels covered by tree canopy
       if (treeMask && treeMask[rp.idx]) continue;
+
+      // Skip pixels covered by buildings
+      if (this.buildingMask && this.buildingMask[rp.idx]) continue;
 
       // Remap to extruded screen position
       let outIdx = rp.idx;

@@ -413,12 +413,15 @@ export class StructureRenderer {
     structures: StructureInstance[],
     season: Season = Season.Summer,
     manorSprites?: LoadedSprite[],
-  ): void {
+  ): Uint8Array {
     const palette = getPalette(season);
+    const buildingMask = new Uint8Array(resolution * resolution);
 
+    // Shadow pass — shadows don't need to be in buildingMask
     for (const s of structures) {
       this._stampShadow(pixels, resolution, s);
     }
+    // Sprite pass — track building pixels in mask
     for (const s of structures) {
       if (s.isCapital && manorSprites && manorSprites.length > 0) {
         const sprite = manorSprites[s.duchyIndex % manorSprites.length];
@@ -426,7 +429,10 @@ export class StructureRenderer {
       } else {
         this._stampSprite(pixels, resolution, s, palette);
       }
+      this._fillMask(buildingMask, resolution, s);
     }
+
+    return buildingMask;
   }
 
   // -----------------------------------------------------------------------

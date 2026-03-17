@@ -4,6 +4,7 @@
  * Draws stone roads between duchy capitals onto the pixel buffer.
  * Roads are 3-4px wide gray cobblestone with slight color variation.
  * Also marks road pixels in a mask so trees won't overlap them.
+ * Supports bridge rendering where roads cross rivers.
  */
 
 import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
@@ -20,15 +21,19 @@ const ROAD_COLORS = [
   packABGR(0x90, 0x88, 0x7a),  // warm stone
 ];
 
-// Road edge/border — darker outline
-const ROAD_EDGE = packABGR(0x5a, 0x54, 0x4e);
+// Bridge colors
+const BRIDGE_DECK    = packABGR(0xb0, 0xa6, 0x96);  // lighter stone
+const BRIDGE_PARAPET = packABGR(0x50, 0x48, 0x42);  // dark stone border
 
 const ROAD_WIDTH = 4;
 
 export class RoadRenderer {
+  bridgeMask: Uint8Array = new Uint8Array(0);
+
   /**
    * Render roads onto the pixel buffer and return a mask of road pixels.
    * The mask can be merged with structureMask to prevent trees on roads.
+   * If riverMask is provided, bridges will be drawn where roads cross rivers.
    */
   render(
     pixels: Uint32Array,
@@ -36,11 +41,13 @@ export class RoadRenderer {
     resolution: number,
     seed: number,
     roads: RoadSegment[],
+    riverMask?: Uint8Array,
   ): Uint8Array {
     const N = resolution;
     const scale = topo.size / N;
     const points = topo.mesh.points;
     const roadMask = new Uint8Array(N * N);
+    this.bridgeMask = new Uint8Array(N * N);
 
     // Noise for color variation
     const rng = mulberry32(seed ^ 0xc0bb1e);
@@ -59,8 +66,7 @@ export class RoadRenderer {
         const x1 = Math.floor(points[rB].x / scale);
         const y1 = Math.floor(points[rB].y / scale);
 
-        // Draw road segment with edge + fill
-        this._drawRoadSegment(pixels, roadMask, N, x0, y0, x1, y1, noise);
+        this._drawRoadSegment(pixels, roadMask, this.bridgeMask, N, x0, y0, x1, y1, noise, riverMask ?? null);
       }
     }
 
@@ -70,27 +76,12 @@ export class RoadRenderer {
   private _drawRoadSegment(
     pixels: Uint32Array,
     mask: Uint8Array,
+    bridgeMask: Uint8Array,
     N: number,
     x0: number, y0: number,
     x1: number, y1: number,
     noise: (x: number, y: number) => number,
-  ): void {
-    // First pass: draw edge (1px wider on each side)
-    this._drawThickLine(pixels, mask, N, x0, y0, x1, y1, ROAD_WIDTH + 2, ROAD_EDGE, noise, true);
-    // Second pass: draw fill
-    this._drawThickLine(pixels, mask, N, x0, y0, x1, y1, ROAD_WIDTH, 0, noise, false);
-  }
-
-  private _drawThickLine(
-    pixels: Uint32Array,
-    mask: Uint8Array,
-    N: number,
-    x0: number, y0: number,
-    x1: number, y1: number,
-    width: number,
-    fixedColor: number,
-    noise: (x: number, y: number) => number,
-    isEdge: boolean,
+    riverMask: Uint8Array | null,
   ): void {
     const dx = Math.abs(x1 - x0);
     const dy = Math.abs(y1 - y0);
@@ -98,9 +89,13 @@ export class RoadRenderer {
     const sy = y0 < y1 ? 1 : -1;
     let err = dx - dy;
     let cx = x0, cy = y0;
-    const r = (width - 1) >> 1;
+    const r = (ROAD_WIDTH - 1) >> 1;
 
     while (true) {
+      // Check if this step crosses a river
+      const isBridge = riverMask !== null && cx >= 0 && cy >= 0 && cx < N && cy < N
+        && riverMask[cy * N + cx] === 1;
+
       for (let oy = -r; oy <= r; oy++) {
         const py = cy + oy;
         if (py < 0 || py >= N) continue;
@@ -109,11 +104,13 @@ export class RoadRenderer {
           if (px < 0 || px >= N) continue;
           const idx = py * N + px;
 
-          if (isEdge) {
-            // Only draw edge pixels, don't set mask
-            pixels[idx] = fixedColor;
+          if (isBridge) {
+            // Bridge: deck or parapet
+            const isEdge = Math.abs(ox) === r || Math.abs(oy) === r;
+            pixels[idx] = isEdge ? BRIDGE_PARAPET : BRIDGE_DECK;
+            bridgeMask[idx] = 1;
           } else {
-            // Cobblestone fill with noise-based color variation
+            // Normal road fill
             const n = noise(px * 0.15, py * 0.15);
             const ci = Math.abs(n) < 0.2 ? 0
               : n < -0.4 ? 3
@@ -121,8 +118,8 @@ export class RoadRenderer {
               : n < 0.4 ? 4
               : 2;
             pixels[idx] = ROAD_COLORS[ci];
-            mask[idx] = 1;
           }
+          mask[idx] = 1;
         }
       }
 

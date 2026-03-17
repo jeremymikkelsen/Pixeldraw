@@ -222,16 +222,18 @@ export class GroundRenderer {
    * Draw rivers onto an existing pixel buffer.
    * Uses Bresenham thick lines between region centers along each river path,
    * with width scaled by log(flowAccumulation).
+   * Returns a Uint8Array river mask (N*N) with 1s wherever river pixels are drawn.
    */
   renderRivers(
     pixels: Uint32Array,
     topo: TopographyGenerator,
     hydro: HydrologyGenerator,
     resolution: number,
-  ): void {
+  ): Uint8Array {
     const { points } = topo.mesh;
     const scale = topo.size / resolution;
     const N = resolution;
+    const riverMask = new Uint8Array(N * N);
 
     // River color palette: darker = deeper/wider
     const RIVER_COLORS = [
@@ -251,6 +253,10 @@ export class GroundRenderer {
         const rA = path[si];
         const rB = path[si + 1];
 
+        // Skip segments that flow into ocean/water
+        const terrainB = topo.terrainType[rB];
+        if (terrainB === 'ocean' || terrainB === 'water') continue;
+
         // World coords → pixel coords
         const x0 = Math.floor(points[rA].x / scale);
         const y0 = Math.floor(points[rA].y / scale);
@@ -266,16 +272,19 @@ export class GroundRenderer {
         const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));
         const color = RIVER_COLORS[ci];
 
-        // Bresenham line with thickness
-        this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color);
+        // Bresenham line with thickness, mark river mask
+        this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color, riverMask);
       }
     }
+
+    return riverMask;
   }
 
   private _drawThickLine(
     pixels: Uint32Array, N: number,
     x0: number, y0: number, x1: number, y1: number,
     width: number, color: number,
+    mask?: Uint8Array,
   ): void {
     const dx = Math.abs(x1 - x0);
     const dy = Math.abs(y1 - y0);
@@ -293,7 +302,9 @@ export class GroundRenderer {
         for (let ox = -r; ox <= r; ox++) {
           const px = cx + ox;
           if (px < 0 || px >= N) continue;
-          pixels[py * N + px] = color;
+          const pidx = py * N + px;
+          pixels[pidx] = color;
+          if (mask) mask[pidx] = 1;
         }
       }
 

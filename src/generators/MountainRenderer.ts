@@ -88,6 +88,7 @@ export class MountainRenderer {
     seed: number,
     treeMask?: Uint8Array,
     season: Season = Season.Summer,
+    roadMask?: Uint8Array,
   ): void {
     this._snowLine = getSnowLine(season);
     this._rockLine = getRockLine(season);
@@ -137,7 +138,7 @@ export class MountainRenderer {
       }
     }
 
-    this._extrudeTerrain(pixels, elevGrid, N, noise, noise2, treeMask);
+    this._extrudeTerrain(pixels, elevGrid, N, noise, noise2, treeMask, roadMask);
   }
 
   // -----------------------------------------------------------------------
@@ -148,6 +149,7 @@ export class MountainRenderer {
     noise: NoiseFunction2D,
     noise2: NoiseFunction2D,
     treeMask?: Uint8Array,
+    roadMask?: Uint8Array,
   ): void {
     // Smooth elevation (7×7 box blur)
     const smoothElev = new Float32Array(N * N);
@@ -175,8 +177,9 @@ export class MountainRenderer {
     const LAND_THRESHOLD = this._season === Season.Winter ? 0.12 : 0.08;
     for (let i = 0; i < N * N; i++) {
       const elev = smoothElev[i];
-      // Don't paint over trees or low-elevation terrain
+      // Don't paint over trees, roads, or low-elevation terrain
       if (treeMask && treeMask[i]) continue;
+      if (roadMask && roadMask[i]) continue;
       if (elev < LAND_THRESHOLD) continue;
 
       if (elev >= this._snowLine) {

@@ -641,7 +641,7 @@ export class MapScene extends Phaser.Scene {
 
     // Mountain extrusion with seasonal snow line
     const mountainRenderer = new MountainRenderer();
-    mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, treeMask, season);
+    mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, treeMask, season, roadMask);
     this._extrusionMap = mountainRenderer.extrusionMap;
     this._screenToSource = mountainRenderer.screenToSource;
 

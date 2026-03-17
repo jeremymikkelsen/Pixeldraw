@@ -134,14 +134,17 @@ export class RiverAnimator {
         let y1 = Math.floor(points[rB].y / scale);
 
         // Is this the terminal segment for this river endpoint?
-        const isLastSeg = si === path.length - 2 && !extendedEndpoints.has(rB);
+        // Only extend main channels (not thin tributaries) to avoid fanning at mouths.
+        const isLastSeg = si === path.length - 2
+          && !extendedEndpoints.has(rB)
+          && hydro.flowAccumulation[rB] >= RIVER_THRESHOLD * 3;
         if (isLastSeg) {
           extendedEndpoints.add(rB);
-          // Extend far enough to guarantee reaching the ocean boundary
+          // Extend 40px in flow direction to reach the water boundary
           const fdx0 = x1 - x0, fdy0 = y1 - y0;
           const flen0 = Math.sqrt(fdx0 * fdx0 + fdy0 * fdy0) || 1;
-          x1 = Math.round(x1 + (fdx0 / flen0) * 80);
-          y1 = Math.round(y1 + (fdy0 / flen0) * 80);
+          x1 = Math.round(x1 + (fdx0 / flen0) * 40);
+          y1 = Math.round(y1 + (fdy0 / flen0) * 40);
         }
 
         // Flow direction (normalized, based on original endpoint before extension)
@@ -172,12 +175,11 @@ export class RiverAnimator {
         this._walkThickLine(N, x0, y0, x1, y1, width,
           (px, py, isCenterLine) => {
             const idx = py * N + px;
-            if (visited[idx]) return;
-
             const terrain = terrainGrid ? terrainGrid[idx] : -1;
 
             if (isLastSeg) {
-              // Count centerline steps into water (≤1) — stop after first water pixel + 2 more
+              // Count centerline steps into water (≤1) — do this BEFORE visited check
+              // so confluences don't prevent counting steps through shared pixels
               if (isCenterLine && terrain <= 1) waterCenterSteps++;
               if (waterCenterSteps > 3) return;
             } else {
@@ -185,6 +187,7 @@ export class RiverAnimator {
               if (terrain === 0) return;
             }
 
+            if (visited[idx]) return;
             visited[idx] = 1;
 
             // Phase for wave animation

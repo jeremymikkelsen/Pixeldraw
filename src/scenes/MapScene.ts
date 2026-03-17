@@ -308,25 +308,31 @@ export class MapScene extends Phaser.Scene {
     if (this.plusKey.isDown || this.eqKey.isDown || this.numpadPlusKey.isDown) cam.zoom = Math.min(MAX_ZOOM, cam.zoom * (1 + ZOOM_SPEED));
     if (this.minusKey.isDown || this.numpadMinusKey.isDown) cam.zoom = Math.max(MIN_ZOOM, cam.zoom * (1 - ZOOM_SPEED));
 
-    // Edge panning (mouse near window edge)
-    if (!this._isSpacePanning && !this._isDragging) {
+    // Edge panning (mouse near window edge) — disabled while keyboard panning
+    const keyPanning = this.cursors.left.isDown || this.cursors.right.isDown
+      || this.cursors.up.isDown || this.cursors.down.isDown
+      || this._wKey.isDown || this._aKey.isDown || this._sKey.isDown || this._dKey.isDown;
+
+    if (!this._isSpacePanning && !this._isDragging && !keyPanning) {
       const pointer = this.input.activePointer;
       const mx = pointer.x;
       const my = pointer.y;
       const w = this.scale.width;
       const h = this.scale.height;
 
-      // Calculate ramp factor (0 at zone boundary, 1 at edge)
-      const edgeSpeed = EDGE_PAN_MAX_SPEED / cam.zoom;
-      if (mx < EDGE_PAN_ZONE) {
-        cam.scrollX -= edgeSpeed * (1 - mx / EDGE_PAN_ZONE) * dt;
-      } else if (mx > w - EDGE_PAN_ZONE) {
-        cam.scrollX += edgeSpeed * (1 - (w - mx) / EDGE_PAN_ZONE) * dt;
-      }
-      if (my < EDGE_PAN_ZONE) {
-        cam.scrollY -= edgeSpeed * (1 - my / EDGE_PAN_ZONE) * dt;
-      } else if (my > h - EDGE_PAN_ZONE) {
-        cam.scrollY += edgeSpeed * (1 - (h - my) / EDGE_PAN_ZONE) * dt;
+      // Only edge-pan when pointer is actually inside the canvas
+      if (mx > 0 && my > 0 && mx < w && my < h) {
+        const edgeSpeed = EDGE_PAN_MAX_SPEED / cam.zoom;
+        if (mx < EDGE_PAN_ZONE) {
+          cam.scrollX -= edgeSpeed * (1 - mx / EDGE_PAN_ZONE) * dt;
+        } else if (mx > w - EDGE_PAN_ZONE) {
+          cam.scrollX += edgeSpeed * (1 - (w - mx) / EDGE_PAN_ZONE) * dt;
+        }
+        if (my < EDGE_PAN_ZONE) {
+          cam.scrollY -= edgeSpeed * (1 - my / EDGE_PAN_ZONE) * dt;
+        } else if (my > h - EDGE_PAN_ZONE) {
+          cam.scrollY += edgeSpeed * (1 - (h - my) / EDGE_PAN_ZONE) * dt;
+        }
       }
     }
 

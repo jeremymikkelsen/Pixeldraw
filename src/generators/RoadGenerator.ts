@@ -5,6 +5,10 @@
  * over the Voronoi region adjacency graph. Roads avoid ocean/water and prefer
  * low-elevation terrain.
  *
+ * River crossing rule: roads may only cross rivers at >80° (nearly perpendicular).
+ * Edges that pass through a river region at a shallower angle receive a heavy
+ * cost penalty, so A* routes the road to a perpendicular crossing instead.
+ *
  * Output: an array of RoadSegment[], each being a sequence of region indices
  * forming a path between two capitals.
  */
@@ -36,6 +40,36 @@ function terrainCost(t: TerrainType): number {
 }
 
 /**
+ * Build a map from river region index → normalized river flow direction.
+ * Used to penalize road edges that cross rivers at shallow angles.
+ */
+function buildRiverDirMap(
+  hydro: HydrologyGenerator,
+  topo: TopographyGenerator,
+): Map<number, { x: number; y: number }> {
+  const points = topo.mesh.points;
+  const map = new Map<number, { x: number; y: number }>();
+
+  for (const path of hydro.rivers) {
+    for (let i = 0; i < path.length - 1; i++) {
+      const rA = path[i], rB = path[i + 1];
+      const dx = points[rB].x - points[rA].x;
+      const dy = points[rB].y - points[rA].y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const dir = { x: dx / len, y: dy / len };
+      // Overwrite is fine — last segment direction for that region is close enough
+      map.set(rA, dir);
+      map.set(rB, dir);
+    }
+  }
+
+  return map;
+}
+
+// cos(80°) ≈ 0.174 — crossings shallower than 80° get penalized
+const COS_80 = Math.cos((80 * Math.PI) / 180);
+
+/**
  * A* pathfinding between two regions on the Voronoi adjacency graph.
  * Returns array of region indices from start to goal, or null if no path.
  */
@@ -44,6 +78,7 @@ function astar(
   goal: number,
   adj: number[][],
   topo: TopographyGenerator,
+  riverDirMap: Map<number, { x: number; y: number }>,
 ): number[] | null {
   const points = topo.mesh.points;
   const terrain = topo.terrainType;
@@ -104,16 +139,36 @@ function astar(
       const cost = terrainCost(terrain[neighbor]);
       if (cost === Infinity) continue;
 
-      // Edge weight: terrain cost * euclidean distance between region centers
-      const dx = points[current].x - points[neighbor].x;
-      const dy = points[current].y - points[neighbor].y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      // Edge weight: terrain cost × euclidean distance between region centers
+      const edgeDX = points[neighbor].x - points[current].x;
+      const edgeDY = points[neighbor].y - points[current].y;
+      const dist = Math.sqrt(edgeDX * edgeDX + edgeDY * edgeDY);
 
-      // Add slope penalty for steep climbs
+      // Slope penalty for steep climbs
       const elevDiff = Math.abs(topo.elevation[neighbor] - topo.elevation[current]);
       const slopePenalty = 1 + elevDiff * 10;
 
-      const tentativeG = (gScore.get(current) ?? Infinity) + cost * dist * slopePenalty;
+      // River crossing angle penalty:
+      // If either endpoint is a river region, check the angle between this road edge
+      // and the river direction. Crossings shallower than 80° get a heavy penalty.
+      // |cos(θ)| = |road · river|; we want |cos| < cos(80°) ≈ 0.174.
+      let riverPenalty = 1.0;
+      const edgeLen = dist || 1;
+      const rdx = edgeDX / edgeLen;
+      const rdy = edgeDY / edgeLen;
+
+      for (const region of [current, neighbor]) {
+        const riverDir = riverDirMap.get(region);
+        if (!riverDir) continue;
+        const absCos = Math.abs(rdx * riverDir.x + rdy * riverDir.y);
+        if (absCos > COS_80) {
+          // Scale penalty: 1× at exactly 80°, up to 200× when fully parallel
+          const t = (absCos - COS_80) / (1 - COS_80);
+          riverPenalty = Math.max(riverPenalty, 1 + t * 199);
+        }
+      }
+
+      const tentativeG = (gScore.get(current) ?? Infinity) + cost * dist * slopePenalty * riverPenalty;
 
       if (tentativeG < (gScore.get(neighbor) ?? Infinity)) {
         cameFrom.set(neighbor, current);
@@ -143,17 +198,19 @@ export function generateRoads(
   const capitals = duchies.map(d => d.capitalRegion);
   const n = capitals.length;
 
+  // River direction map for crossing-angle penalty
+  const riverDirMap = buildRiverDirMap(hydro, topo);
+
   // Compute all pairwise shortest paths between capitals
   const paths: (number[] | null)[][] = Array.from({ length: n }, () => new Array(n).fill(null));
   const costs: number[][] = Array.from({ length: n }, () => new Array(n).fill(Infinity));
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const path = astar(capitals[i], capitals[j], adj, topo);
+      const path = astar(capitals[i], capitals[j], adj, topo, riverDirMap);
       if (path) {
         paths[i][j] = path;
         paths[j][i] = [...path].reverse();
-        // Cost = path length (number of regions)
         costs[i][j] = path.length;
         costs[j][i] = path.length;
       }

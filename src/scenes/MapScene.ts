@@ -20,6 +20,8 @@ const SCROLL_SPEED = 300;
 const ZOOM_SPEED = 0.03;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
+const EDGE_PAN_ZONE = 40;       // pixels from window edge to start panning
+const EDGE_PAN_MAX_SPEED = 500;  // max pan speed at the very edge
 
 export class MapScene extends Phaser.Scene {
   private mapSprite!: Phaser.GameObjects.Sprite;
@@ -27,6 +29,22 @@ export class MapScene extends Phaser.Scene {
   private plusKey!: Phaser.Input.Keyboard.Key;
   private minusKey!: Phaser.Input.Keyboard.Key;
   private eqKey!: Phaser.Input.Keyboard.Key;
+  private numpadPlusKey!: Phaser.Input.Keyboard.Key;
+  private numpadMinusKey!: Phaser.Input.Keyboard.Key;
+
+  // WASD keys
+  private _wKey!: Phaser.Input.Keyboard.Key;
+  private _aKey!: Phaser.Input.Keyboard.Key;
+  private _sKey!: Phaser.Input.Keyboard.Key;
+  private _dKey!: Phaser.Input.Keyboard.Key;
+
+  // Space-drag panning
+  private _spaceKey!: Phaser.Input.Keyboard.Key;
+  private _isSpacePanning = false;
+  private _spaceDragStartX = 0;
+  private _spaceDragStartY = 0;
+  private _spaceCamStartX = 0;
+  private _spaceCamStartY = 0;
 
   // Persistent refs for river animation
   private _pixels!: Uint32Array;
@@ -95,16 +113,29 @@ export class MapScene extends Phaser.Scene {
     cam.setBounds(0, 0, MAP_SIZE, MAP_SIZE);
     cam.centerOn(MAP_SIZE / 2, MAP_SIZE / 2);
 
-    // Input — use =/- keys (regular keyboard, not numpad-only)
+    // Input — zoom keys (regular keyboard + numpad)
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.plusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.PLUS);
     this.minusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.MINUS);
     this.eqKey = this.input.keyboard!.addKey(187);  // =/+ key on US keyboards
+    this.numpadPlusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_ADD);
+    this.numpadMinusKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.NUMPAD_SUBTRACT);
 
-    this.input.keyboard!.on('keydown-SPACE', () => {
+    // WASD pan keys
+    this._wKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+    this._aKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+    this._sKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.S);
+    this._dKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+
+    // Space key for hand-pan mode
+    this._spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+    // Enter = new game
+    this.input.keyboard!.on('keydown-ENTER', () => {
       this._showSetupAndStart();
     });
 
+    // Overlay toggles (8/9/0)
     this.input.keyboard!.on('keydown-ZERO', () => {
       this._activeOverlay = this._activeOverlay === 'moisture' ? 'none' : 'moisture';
     });
@@ -115,6 +146,58 @@ export class MapScene extends Phaser.Scene {
 
     this.input.keyboard!.on('keydown-EIGHT', () => {
       this._activeOverlay = this._activeOverlay === 'airMoisture' ? 'none' : 'airMoisture';
+    });
+
+    // Mouse wheel zoom centered on cursor
+    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gos: Phaser.GameObjects.GameObject[], _dx: number, dy: number) => {
+      const pointer = this.input.activePointer;
+      const cam = this.cameras.main;
+
+      // World position under cursor before zoom
+      const worldXBefore = pointer.worldX;
+      const worldYBefore = pointer.worldY;
+
+      // Apply zoom
+      const zoomDelta = dy > 0 ? (1 - ZOOM_SPEED * 3) : (1 + ZOOM_SPEED * 3);
+      cam.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, cam.zoom * zoomDelta));
+
+      // World position under cursor after zoom (recalculate)
+      const worldXAfter = cam.scrollX + pointer.x / cam.zoom;
+      const worldYAfter = cam.scrollY + pointer.y / cam.zoom;
+
+      // Shift camera so the same world point stays under the cursor
+      cam.scrollX += worldXBefore - worldXAfter;
+      cam.scrollY += worldYBefore - worldYAfter;
+    });
+
+    // Space+drag panning — mousedown while space held
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this._spaceKey.isDown) {
+        this._isSpacePanning = true;
+        this._spaceDragStartX = pointer.x;
+        this._spaceDragStartY = pointer.y;
+        const cam = this.cameras.main;
+        this._spaceCamStartX = cam.scrollX;
+        this._spaceCamStartY = cam.scrollY;
+        this.game.canvas.style.cursor = 'grabbing';
+      }
+    });
+
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (this._isSpacePanning) {
+        const cam = this.cameras.main;
+        const dx = (this._spaceDragStartX - pointer.x) / cam.zoom;
+        const dy = (this._spaceDragStartY - pointer.y) / cam.zoom;
+        cam.scrollX = this._spaceCamStartX + dx;
+        cam.scrollY = this._spaceCamStartY + dy;
+      }
+    });
+
+    this.input.on('pointerup', () => {
+      if (this._isSpacePanning) {
+        this._isSpacePanning = false;
+        this.game.canvas.style.cursor = this._spaceKey.isDown ? 'grab' : 'default';
+      }
     });
 
     // Touch / mobile support
@@ -134,7 +217,7 @@ export class MapScene extends Phaser.Scene {
     // HUD text (fixed to camera via setScrollFactor)
     const hudLabel = this._isTouchDevice
       ? 'Drag to pan · Pinch to zoom · Buttons at bottom-right'
-      : 'ARROWS scroll · +/- zoom · SPACE new game · 9 elevation · 0 moisture';
+      : 'WASD/Arrows pan · Scroll zoom · Hold SPACE drag pan · ENTER new game · 8/9/0 overlays';
     this.add.text(8, 40, hudLabel, {
       fontSize: '13px',
       color: '#ffffff',
@@ -198,15 +281,44 @@ export class MapScene extends Phaser.Scene {
     const dt = delta / 1000;
     const speed = SCROLL_SPEED / cam.zoom;
 
-    // Arrow key scrolling
-    if (this.cursors.left.isDown)  cam.scrollX -= speed * dt;
-    if (this.cursors.right.isDown) cam.scrollX += speed * dt;
-    if (this.cursors.up.isDown)    cam.scrollY -= speed * dt;
-    if (this.cursors.down.isDown)  cam.scrollY += speed * dt;
+    // Arrow key + WASD scrolling
+    if (this.cursors.left.isDown || this._aKey.isDown)  cam.scrollX -= speed * dt;
+    if (this.cursors.right.isDown || this._dKey.isDown) cam.scrollX += speed * dt;
+    if (this.cursors.up.isDown || this._wKey.isDown)    cam.scrollY -= speed * dt;
+    if (this.cursors.down.isDown || this._sKey.isDown)  cam.scrollY += speed * dt;
 
-    // +/- zoom (numpad plus OR =/+ key)
-    if (this.plusKey.isDown || this.eqKey.isDown) cam.zoom = Math.min(MAX_ZOOM, cam.zoom * (1 + ZOOM_SPEED));
-    if (this.minusKey.isDown) cam.zoom = Math.max(MIN_ZOOM, cam.zoom * (1 - ZOOM_SPEED));
+    // +/- zoom (regular keyboard + numpad)
+    if (this.plusKey.isDown || this.eqKey.isDown || this.numpadPlusKey.isDown) cam.zoom = Math.min(MAX_ZOOM, cam.zoom * (1 + ZOOM_SPEED));
+    if (this.minusKey.isDown || this.numpadMinusKey.isDown) cam.zoom = Math.max(MIN_ZOOM, cam.zoom * (1 - ZOOM_SPEED));
+
+    // Edge panning (mouse near window edge)
+    if (!this._isSpacePanning && !this._isDragging) {
+      const pointer = this.input.activePointer;
+      const mx = pointer.x;
+      const my = pointer.y;
+      const w = this.scale.width;
+      const h = this.scale.height;
+
+      // Calculate ramp factor (0 at zone boundary, 1 at edge)
+      const edgeSpeed = EDGE_PAN_MAX_SPEED / cam.zoom;
+      if (mx < EDGE_PAN_ZONE) {
+        cam.scrollX -= edgeSpeed * (1 - mx / EDGE_PAN_ZONE) * dt;
+      } else if (mx > w - EDGE_PAN_ZONE) {
+        cam.scrollX += edgeSpeed * (1 - (w - mx) / EDGE_PAN_ZONE) * dt;
+      }
+      if (my < EDGE_PAN_ZONE) {
+        cam.scrollY -= edgeSpeed * (1 - my / EDGE_PAN_ZONE) * dt;
+      } else if (my > h - EDGE_PAN_ZONE) {
+        cam.scrollY += edgeSpeed * (1 - (h - my) / EDGE_PAN_ZONE) * dt;
+      }
+    }
+
+    // Space key cursor management
+    if (this._spaceKey.isDown && !this._isSpacePanning) {
+      this.game.canvas.style.cursor = 'grab';
+    } else if (!this._spaceKey.isDown && !this._isSpacePanning) {
+      this.game.canvas.style.cursor = 'default';
+    }
 
     // Animate rivers
     if (this._riverAnimator) {

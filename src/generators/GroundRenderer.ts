@@ -253,10 +253,6 @@ export class GroundRenderer {
     // Per-pixel ocean clip: index 0 = ocean, 1 = water
     const tg = this.terrainGrid;
 
-    // How far to extrapolate river mouth beyond last region center (pixels)
-    const MOUTH_EXTEND = 100;
-
-    // Draw all river segments
     for (const path of hydro.rivers) {
       for (let si = 0; si < path.length - 1; si++) {
         const rA = path[si];
@@ -278,37 +274,6 @@ export class GroundRenderer {
 
         this._drawThickLine(pixels, N, x0, y0, x1, y1, width, color, riverMask, tg);
       }
-    }
-
-    // Extend river mouths to reach deep ocean — one extension per unique endpoint
-    // to avoid fanning when multiple tributaries share the same terminal region.
-    const extendedEndpoints = new Set<number>();
-    for (const path of hydro.rivers) {
-      if (path.length < 2) continue;
-      const lastR = path[path.length - 1];
-      if (extendedEndpoints.has(lastR)) continue;
-      extendedEndpoints.add(lastR);
-
-      const prevR = path[path.length - 2];
-      const x0 = Math.floor(points[prevR].x / scale);
-      const y0 = Math.floor(points[prevR].y / scale);
-      const x1 = Math.floor(points[lastR].x / scale);
-      const y1 = Math.floor(points[lastR].y / scale);
-
-      const fdx = x1 - x0, fdy = y1 - y0;
-      const flen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
-      const extX = Math.round(x1 + (fdx / flen) * MOUTH_EXTEND);
-      const extY = Math.round(y1 + (fdy / flen) * MOUTH_EXTEND);
-
-      // Use the highest flow accumulation among rivers sharing this endpoint
-      const flow = Math.max(RIVER_MIN, hydro.flowAccumulation[lastR]);
-      const t = Math.min(1, (Math.log(flow) - logMin) / logRange);
-      const width = Math.max(1, Math.ceil(t * 10));
-      const ci = Math.min(RIVER_COLORS.length - 1, Math.floor(t * RIVER_COLORS.length));
-      const color = RIVER_COLORS[ci];
-
-      // No terrain clip — draw into ocean so the river visually reaches dark water
-      this._drawThickLine(pixels, N, x1, y1, extX, extY, width, color, riverMask, null);
     }
 
     return riverMask;

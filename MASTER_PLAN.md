@@ -6,6 +6,24 @@ Pixeldraw is evolving from a procedural terrain generator into a full turn-based
 
 ---
 
+## House Heritage
+
+Each house draws from a distinct real-world ethnic heritage, adding cultural depth and visual variety to the nine duchies.
+
+| House | Heritage | Rationale |
+|-------|----------|-----------|
+| Aldren | Anglo-Saxon / Norse | Old land, settled roots — fits the Northern European lord archetype |
+| Mira | Han Chinese / Japanese | Sharp precision and merchant intelligence read naturally here |
+| Varek | West African | Strength and directness without aggression — the warrior-lord who doesn't need to perform it |
+| Sera | South Asian | Grace, warmth, and court sophistication with deep cultural tradition |
+| Dorn | Iberian / Mesoamerican mixed | Young, frontier-hungry, borderlands energy |
+| Vael | Persian / Anatolian | Ancient agricultural civilization, patient long-view thinking |
+| Crell | Slavic | The watcher in the cold grey north — culturally fits the shadowed intelligence archetype |
+| Brynn | Celtic / Indigenous North American mixed | Two cultures defined by resilience and survival — perfect for the defender |
+| Orvyn | West African / Maghrebi mixed | West Africa and North Africa both have extraordinary scholarly traditions (Timbuktu, the House of Wisdom lineage) |
+
+---
+
 ## Current State (Already Implemented)
 
 The terrain engine is largely complete (~3,600 lines across 13 files):

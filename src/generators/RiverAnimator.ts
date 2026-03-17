@@ -120,6 +120,9 @@ export class RiverAnimator {
     this._visited = new Uint8Array(N * N);
     const visited = this._visited;
 
+    // Deduplicate mouth extensions — one per unique terminal region
+    const extendedEndpoints = new Set<number>();
+
     for (const path of hydro.rivers) {
       for (let si = 0; si < path.length - 1; si++) {
         const rA = path[si];
@@ -127,8 +130,18 @@ export class RiverAnimator {
 
         const x0 = Math.floor(points[rA].x / scale);
         const y0 = Math.floor(points[rA].y / scale);
-        const x1 = Math.floor(points[rB].x / scale);
-        const y1 = Math.floor(points[rB].y / scale);
+        let x1 = Math.floor(points[rB].x / scale);
+        let y1 = Math.floor(points[rB].y / scale);
+
+        // For the last segment, extend past the region center to the coast boundary.
+        // 40px is enough to clear the Voronoi center; terrain clip stops at ocean (0).
+        if (si === path.length - 2 && !extendedEndpoints.has(rB)) {
+          extendedEndpoints.add(rB);
+          const fdx = x1 - x0, fdy = y1 - y0;
+          const flen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
+          x1 = Math.round(x1 + (fdx / flen) * 40);
+          y1 = Math.round(y1 + (fdy / flen) * 40);
+        }
 
         // Flow direction (normalized)
         const fdx = x1 - x0;

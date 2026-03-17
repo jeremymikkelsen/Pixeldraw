@@ -350,6 +350,15 @@ html, body, #root {
   line-height: 1;
 }
 
+.house-card-portrait {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.15);
+  image-rendering: pixelated;
+}
+
 .house-card-meta {
   display: flex;
   flex-direction: column;
@@ -396,6 +405,31 @@ html, body, #root {
 .house-detail-sigil {
   font-size: 4rem;
   text-align: center;
+}
+
+.house-detail-portrait-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.house-detail-portrait {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid rgba(255,255,255,0.2);
+  image-rendering: pixelated;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+.house-detail-crest {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  opacity: 0.85;
 }
 
 .house-detail-header {

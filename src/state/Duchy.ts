@@ -18,6 +18,8 @@ export interface HouseData {
   color: number;       // RGB hex
   description: string;
   bonuses: { name: string; description: string }[];
+  portraitUrl: string;  // ruler portrait image
+  crestUrl: string;     // house crest image
 }
 
 /** Runtime duchy state during gameplay */
@@ -50,6 +52,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Iron Resolve', description: 'Refusing demands incurs half the favor penalty' },
       { name: 'Granary Legacy', description: 'Starts with an extra Field building' },
     ],
+    portraitUrl: '/houses/duke_aldren.png',
+    crestUrl: '/houses/house_aldren.png',
   },
   {
     name: 'House Mira',
@@ -66,6 +70,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Silver Tongue', description: 'Petitioning costs 20% less gold' },
       { name: 'Trade Routes', description: 'Port and market produce 25% more gold' },
     ],
+    portraitUrl: '/houses/duchess_mira.png',
+    crestUrl: '/houses/house_mira.png',
   },
   {
     name: 'House Sera',
@@ -82,6 +88,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Diplomatic Grace', description: 'Favor losses reduced by 20%' },
       { name: 'Generous Patron', description: '3 tile choices instead of 2 on fulfillment' },
     ],
+    portraitUrl: '/houses/duchess_sera.png',
+    crestUrl: '/houses/house_sera.png',
   },
   {
     name: 'House Dorn',
@@ -98,6 +106,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Bold Claims', description: 'Petitioning costs 20% less gold' },
       { name: "Fortune's Hand", description: '15% chance of bonus resource on tile claim' },
     ],
+    portraitUrl: '/houses/duke_dorn.png',
+    crestUrl: '/houses/house_dorn.png',
   },
   {
     name: 'House Crell',
@@ -114,6 +124,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Insider Knowledge', description: 'Petitioning success chance +25%' },
       { name: 'Advance Warning', description: "Autumn rumor reveals next winter's demand" },
     ],
+    portraitUrl: '/houses/duke_crell.png',
+    crestUrl: '/houses/house_crell.png',
   },
   {
     name: 'House Vael',
@@ -130,6 +142,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Agrarian Tradition', description: 'Field, pasture, and orchard cost 15% less' },
       { name: 'Market Surplus', description: 'Grain above 40 auto-converts to gold at 3:1' },
     ],
+    portraitUrl: '/houses/duchess_vael.png',
+    crestUrl: '/houses/house_vael.png',
   },
   {
     name: 'House Orvyn',
@@ -146,6 +160,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Modest King', description: "King's demands reduced by 15%" },
       { name: 'Perfect Storage', description: "Food doesn't decay" },
     ],
+    portraitUrl: '/houses/duke_orvyn.png',
+    crestUrl: '/houses/house_orvyn.png',
   },
   {
     name: 'House Varek',
@@ -162,6 +178,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Barracks Builder', description: 'Barracks cost 20% less' },
       { name: "Veteran's Return", description: 'Levied citizens return faster, +20% compliance reward' },
     ],
+    portraitUrl: '/houses/duke_varek.png',
+    crestUrl: '/houses/house_varek.png',
   },
   {
     name: 'House Brynn',
@@ -178,6 +196,8 @@ export const HOUSES: HouseData[] = [
       { name: 'Stubborn Pride', description: 'Refusing levy incurs 70% of normal favor penalty' },
       { name: 'Hardened Folk', description: '+15% favor reward at war end' },
     ],
+    portraitUrl: '/houses/duchess_brynn.png',
+    crestUrl: '/houses/house_brynn.png',
   },
 ];
 

@@ -9,11 +9,25 @@ function startGame(houseIndex: number, seed: number) {
   }));
 }
 
+function PortraitImg({ src, alt, className }: { src: string; alt: string; className: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      className={className}
+      src={src}
+      alt={alt}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export function HouseSelectScreen() {
   const [selected, setSelected] = useState(0);
   const [seed, setSeed] = useState(() => Date.now());
   const setPhase = useUIStore(s => s.setPhase);
   const house = HOUSES[selected];
+  const colorHex = '#' + house.color.toString(16).padStart(6, '0');
 
   function handleBegin() {
     setPhase('playing');
@@ -34,7 +48,11 @@ export function HouseSelectScreen() {
               className={`house-card ${selected === i ? 'house-card--selected' : ''}`}
               onClick={() => setSelected(i)}
             >
-              <span className="house-card-sigil">{h.sigil}</span>
+              <PortraitImg
+                className="house-card-portrait"
+                src={h.portraitUrl}
+                alt={h.rulerName}
+              />
               <div className="house-card-meta">
                 <span className="house-card-name">{h.name}</span>
                 <span className="house-card-ruler">{h.rulerName} {h.epithet}</span>
@@ -46,10 +64,21 @@ export function HouseSelectScreen() {
 
         {/* Right: detail panel */}
         <div className="house-detail-panel">
-          <div className="house-detail-sigil">{house.sigil}</div>
+          <div className="house-detail-portrait-wrap">
+            <PortraitImg
+              className="house-detail-portrait"
+              src={house.portraitUrl}
+              alt={house.rulerName}
+            />
+            <PortraitImg
+              className="house-detail-crest"
+              src={house.crestUrl}
+              alt={`${house.name} crest`}
+            />
+          </div>
 
           <div className="house-detail-header">
-            <h2 className="house-detail-name">{house.name}</h2>
+            <h2 className="house-detail-name" style={{ color: colorHex }}>{house.name}</h2>
             <span className="house-detail-ruler">
               {house.rulerName}, <em>{house.epithet}</em>
             </span>

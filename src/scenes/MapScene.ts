@@ -824,9 +824,13 @@ export class MapScene extends Phaser.Scene {
     }
 
     // Pasture animator (cows wander over pasture regions)
-    this._pastureAnimator = farmRenderer.pastures.length > 0
-      ? new PastureAnimator(farmRenderer.pastures, PIXEL_RESOLUTION, seed, season)
-      : null;
+    if (farmRenderer.pastures.length > 0) {
+      const pa = new PastureAnimator(farmRenderer.pastures, PIXEL_RESOLUTION, seed, season);
+      pa.extrusionMap = mountainRenderer.extrusionMap;
+      this._pastureAnimator = pa;
+    } else {
+      this._pastureAnimator = null;
+    }
 
     // Store refs
     this._pixels = pixels;

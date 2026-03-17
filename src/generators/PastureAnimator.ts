@@ -66,6 +66,8 @@ interface PastureInstance {
 
 // ─────────────────────────────────────────────────────────────────────────────
 export class PastureAnimator {
+  extrusionMap: Int16Array | null = null;
+
   private _pastures: PastureInstance[] = [];
   private _N: number;
   private _season: Season;
@@ -123,19 +125,22 @@ export class PastureAnimator {
     if (this._season === Season.Winter) return;
 
     const N = this._N;
+    const ext = this.extrusionMap;
 
     for (const pasture of this._pastures) {
-      // Restore interior grass pixels (erase previous frame's cows)
+      // Restore interior grass pixels at their extruded screen positions
       for (const p of pasture.interiorPixels) {
-        pixels[p.idx] = p.color;
+        const outIdx = this._screenIdx(p.idx, N, ext);
+        if (outIdx < 0) continue;
+        pixels[outIdx] = p.color;
       }
 
-      // Stamp cows at new positions
+      // Stamp cows at new positions (source coords → screen coords via extrusion)
       for (const cow of pasture.cows) {
         const cx = Math.round(cow.homeX + Math.sin(timeMs * cow.freqX + cow.phaseX) * cow.radiusX);
         const cy = Math.round(cow.homeY + Math.sin(timeMs * cow.freqY + cow.phaseY) * cow.radiusY);
 
-        // Clamp to pasture bounds with margin for sprite size
+        // Clamp to pasture source bounds with margin for sprite size
         const sx = Math.max(pasture.minX, Math.min(pasture.maxX - COW_W, cx));
         const sy = Math.max(pasture.minY, Math.min(pasture.maxY - COW_H, cy));
 
@@ -144,7 +149,7 @@ export class PastureAnimator {
         const facingRight = cow.mirrorBase ? vx > 0 : vx <= 0;
         const sprite = facingRight ? COW_RIGHT : COW_LEFT;
 
-        // Draw cow sprite
+        // Draw cow sprite — convert each source pixel to screen position
         for (let row = 0; row < COW_H; row++) {
           for (let col = 0; col < COW_W; col++) {
             const cell = sprite[row][col];
@@ -152,10 +157,23 @@ export class PastureAnimator {
             const px = sx + col;
             const py = sy + row;
             if (px < 0 || px >= N || py < 0 || py >= N) continue;
-            pixels[py * N + px] = cell === 0 ? COW_BODY : COW_PATCH;
+            const srcIdx = py * N + px;
+            const outIdx = this._screenIdx(srcIdx, N, ext);
+            if (outIdx < 0) continue;
+            pixels[outIdx] = cell === 0 ? COW_BODY : COW_PATCH;
           }
         }
       }
     }
+  }
+
+  // Convert source pixel index to screen index via extrusionMap (mirrors RiverAnimator)
+  private _screenIdx(srcIdx: number, N: number, ext: Int16Array | null): number {
+    if (!ext) return srcIdx;
+    const px = srcIdx % N;
+    const py = (srcIdx - px) / N;
+    const screenY = py - ext[srcIdx];
+    if (screenY < 0 || screenY >= N) return -1;
+    return screenY * N + px;
   }
 }

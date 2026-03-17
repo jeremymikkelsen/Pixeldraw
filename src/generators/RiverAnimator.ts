@@ -143,8 +143,8 @@ export class RiverAnimator {
           // Extend 40px in flow direction to reach the water boundary
           const fdx0 = x1 - x0, fdy0 = y1 - y0;
           const flen0 = Math.sqrt(fdx0 * fdx0 + fdy0 * fdy0) || 1;
-          x1 = Math.round(x1 + (fdx0 / flen0) * 0);
-          y1 = Math.round(y1 + (fdy0 / flen0) * 0);
+          x1 = Math.round(x1 + (fdx0 / flen0) * -5);
+          y1 = Math.round(y1 + (fdy0 / flen0) * -5);
         }
 
         // Flow direction (normalized, based on original endpoint before extension)

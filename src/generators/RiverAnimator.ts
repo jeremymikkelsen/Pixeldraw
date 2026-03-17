@@ -133,17 +133,18 @@ export class RiverAnimator {
         let x1 = Math.floor(points[rB].x / scale);
         let y1 = Math.floor(points[rB].y / scale);
 
-        // For the last segment, extend past the region center to the coast boundary.
-        // 40px is enough to clear the Voronoi center; terrain clip stops at ocean (0).
-        if (si === path.length - 2 && !extendedEndpoints.has(rB)) {
+        // Is this the terminal segment for this river endpoint?
+        const isLastSeg = si === path.length - 2 && !extendedEndpoints.has(rB);
+        if (isLastSeg) {
           extendedEndpoints.add(rB);
-          const fdx = x1 - x0, fdy = y1 - y0;
-          const flen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
-          x1 = Math.round(x1 + (fdx / flen) * 40);
-          y1 = Math.round(y1 + (fdy / flen) * 40);
+          // Extend far enough to guarantee reaching the ocean boundary
+          const fdx0 = x1 - x0, fdy0 = y1 - y0;
+          const flen0 = Math.sqrt(fdx0 * fdx0 + fdy0 * fdy0) || 1;
+          x1 = Math.round(x1 + (fdx0 / flen0) * 80);
+          y1 = Math.round(y1 + (fdy0 / flen0) * 80);
         }
 
-        // Flow direction (normalized)
+        // Flow direction (normalized, based on original endpoint before extension)
         const fdx = x1 - x0;
         const fdy = y1 - y0;
         const flen = Math.sqrt(fdx * fdx + fdy * fdy) || 1;
@@ -163,13 +164,27 @@ export class RiverAnimator {
         // Log placement (on Bresenham steps, narrow rivers only)
         let logPlaced = false;
 
+        // For the last segment: count centerline steps into water/ocean terrain.
+        // Stop after 2 — gives "boundary + 2px" feel.
+        let waterCenterSteps = 0;
+
         // Walk Bresenham thick line
         this._walkThickLine(N, x0, y0, x1, y1, width,
           (px, py, isCenterLine) => {
             const idx = py * N + px;
             if (visited[idx]) return;
-            // Skip deep ocean pixels — allow rivers over shallow water to reach the shore
-            if (terrainGrid && terrainGrid[idx] === 0) return;
+
+            const terrain = terrainGrid ? terrainGrid[idx] : -1;
+
+            if (isLastSeg) {
+              // Count centerline steps into water (≤1) — stop after first water pixel + 2 more
+              if (isCenterLine && terrain <= 1) waterCenterSteps++;
+              if (waterCenterSteps > 3) return;
+            } else {
+              // Normal segments: stop at ocean (0)
+              if (terrain === 0) return;
+            }
+
             visited[idx] = 1;
 
             // Phase for wave animation

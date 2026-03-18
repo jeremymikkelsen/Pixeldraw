@@ -61,12 +61,20 @@ const WHEEL_COLORS = [
   packABGR(0x6e, 0x5c, 0x3e),
 ];
 
+// ── Captured ground pixels behind a tree (for erasing the standing tree) ───
+interface TreeFootprint {
+  // screen pixel index → original ground color (before tree was drawn)
+  pixels: Map<number, number>;
+}
+
 // ── Per-woodcutter state ───────────────────────────────────────────────────
 interface LumberjackState {
   data: WoodcutterRenderData;
   bodyColor: number;
   // Current target (cycles through data.targets)
   currentTarget: number;
+  // Per-target tree footprint for erasing the standing tree during fall
+  treeFootprints: TreeFootprint[];
   // Smoke
   smokeParticles: SmokeParticle[];
   lastSmokeSpawn: number;
@@ -84,7 +92,7 @@ export class WoodcutterAnimator {
 
   constructor(
     renderData: WoodcutterRenderData[],
-    _treeMask: Uint8Array,
+    pixels: Uint32Array,
     N: number,
     seed: number,
     season: Season,
@@ -99,10 +107,70 @@ export class WoodcutterAnimator {
       const rng = mulberry32(seed ^ (rd.duchyIndex * 0x4c3b + 0xface));
       const bodyColor = duchyColors[rd.duchyIndex] ?? packABGR(0x80, 0x60, 0x40);
 
+      // Capture the ground pixels behind each target tree so we can erase
+      // the standing tree during the fall animation
+      const treeFootprints: TreeFootprint[] = [];
+      for (const tree of rd.targets) {
+        const fp: TreeFootprint = { pixels: new Map() };
+        const { w, h, data, flipped } = tree;
+        const startX = tree.px - Math.floor(w / 2);
+        const startY = tree.py - h + 1;
+
+        // First pass: read what's behind the tree sprite right now (tree pixels on top of ground).
+        // We need the ground color, so we'll re-stamp it from the ground layer.
+        // Since we can't easily get the ground, we snapshot the tree footprint as-is,
+        // then when we erase, we draw the tree sprite's shadow footprint area with
+        // the surrounding average ground color.
+        // Simpler approach: snapshot pixels in a ring around the tree and use median
+        // as the ground color for erasure.
+
+        // Sample ground color from pixels just outside the tree footprint
+        let groundR = 0, groundG = 0, groundB = 0, groundCount = 0;
+        for (let sy = -1; sy <= h; sy++) {
+          for (let sx = -1; sx <= w; sx++) {
+            // Only sample the border pixels (just outside the sprite)
+            if (sx >= 0 && sx < w && sy >= 0 && sy < h) {
+              const srcX = flipped ? (w - 1 - sx) : sx;
+              if (data[sy * w + srcX] !== 0) continue; // skip non-transparent tree pixels
+            }
+            const px = startX + sx;
+            const py = startY + sy;
+            if (px < 0 || px >= N || py < 0 || py >= N) continue;
+            const c = pixels[py * N + px];
+            groundR += c & 0xff;
+            groundG += (c >> 8) & 0xff;
+            groundB += (c >> 16) & 0xff;
+            groundCount++;
+          }
+        }
+        const avgGround = groundCount > 0
+          ? (255 << 24)
+            | (Math.round(groundB / groundCount) << 16)
+            | (Math.round(groundG / groundCount) << 8)
+            | Math.round(groundR / groundCount)
+          : pixels[tree.py * N + tree.px]; // fallback
+
+        // Record all non-transparent tree pixels → ground color
+        for (let sy = 0; sy < h; sy++) {
+          for (let sx = 0; sx < w; sx++) {
+            const srcX = flipped ? (w - 1 - sx) : sx;
+            if (data[sy * w + srcX] === 0) continue;
+            const px = startX + sx;
+            const py = startY + sy;
+            if (px < 0 || px >= N || py < 0 || py >= N) continue;
+            const screenIdx = py * N + px;
+            fp.pixels.set(screenIdx, avgGround);
+          }
+        }
+
+        treeFootprints.push(fp);
+      }
+
       this._workers.push({
         data: rd,
         bodyColor,
         currentTarget: Math.floor(rng() * Math.max(1, rd.targets.length)),
+        treeFootprints,
         smokeParticles: [],
         lastSmokeSpawn: 0,
       });
@@ -229,11 +297,22 @@ export class WoodcutterAnimator {
     const cycleIdx = Math.floor(globalT / cycleDur) % numTargets;
     const t = (globalT % cycleDur) / cycleDur;
 
-    const tree = w.data.targets[cycleIdx % numTargets];
+    const targetIdx = cycleIdx % numTargets;
+    const tree = w.data.targets[targetIdx];
+    const footprint = w.treeFootprints[targetIdx];
     const hx = w.data.hutPx;
     const hy = w.data.hutPy;
     const tx = tree.px;
     const ty = tree.py;
+
+    // Erase the standing tree once chopping begins (replace with ground color)
+    const treeIsDown = t >= CHOP_END;
+    if (treeIsDown && footprint) {
+      for (const [screenIdx, groundColor] of footprint.pixels) {
+        this._saveDirty(pixels, screenIdx);
+        pixels[screenIdx] = groundColor;
+      }
+    }
 
     let wx: number, wy: number;
     let facingRight: boolean;

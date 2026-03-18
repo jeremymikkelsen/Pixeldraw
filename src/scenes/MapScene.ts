@@ -1019,7 +1019,7 @@ export class MapScene extends Phaser.Scene {
         return packABGR((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff);
       });
       const wca = new WoodcutterAnimator(
-        wcRenderData, treeMask, PIXEL_RESOLUTION,
+        wcRenderData, pixels, PIXEL_RESOLUTION,
         seed, season, duchyColors, this._state,
       );
       wca.extrusionMap = mountainRenderer.extrusionMap;

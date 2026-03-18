@@ -129,9 +129,14 @@ export interface FishingCampRenderData {
   waterDirY: number;
   chimneyPx: number;
   chimneyPy: number;
-  // Ocean: far fishing spot where boat goes
+  // Where the static moored boat is drawn (boat returns here)
+  mooredPx: number;
+  mooredPy: number;
+  // Far fishing spot where boat sails to
   fishingPx: number;
   fishingPy: number;
+  // Positions of the two drying racks (for worker animation)
+  rackPositions: { px: number; py: number }[];
 }
 
 // ── Renderer ─────────────────────────────────────────────────────────────────
@@ -156,6 +161,7 @@ export class FishingCampRenderer {
         const ri = camp.regionIndex;
         for (let i = 0; i < NN * NN; i++) {
           if (regionGrid[i] !== ri) continue;
+          if (riverMask && riverMask[i]) continue; // keep river pixels visible
           pixels[i] = dirtColor;
           mask[i] = 1;
         }
@@ -167,24 +173,26 @@ export class FishingCampRenderer {
 
       if (hutPx < 20 || hutPy < 20 || hutPx >= NN - 20 || hutPy >= NN - 20) continue;
 
+      const perpX = -waterDirY;
+      const perpY =  waterDirX;
+
       // ── Dock or wharf ────────────────────────────────────────────────────
       if (variant === 'ocean') {
         this._drawPier(pixels, NN, hutPx, hutPy, dockPx, dockPy, palette, mask);
-        // Moored boat at dock tip
-        this._drawBoat(pixels, NN, dockPx, dockPy, waterDirX, waterDirY, palette, mask);
       } else {
-        this._drawWharf(pixels, NN, hutPx, hutPy, waterDirX, waterDirY, palette, mask);
-        // River fishermen standing on wharf casting
-        this._drawRiverFishermen(pixels, NN, hutPx, hutPy, waterDirX, waterDirY, palette, mask);
+        // River: short wharf at water's edge, no pier needed (hut is close)
+        this._drawWharf(pixels, NN, dockPx, dockPy, waterDirX, waterDirY, palette, mask);
       }
+      // Moored boat for both variants (at pier/wharf tip)
+      this._drawBoat(pixels, NN, dockPx, dockPy, waterDirX, waterDirY, palette, mask);
 
       // ── Fish drying racks (either side of hut, away from water) ─────────
-      const perpX = -waterDirY;
-      const perpY =  waterDirX;
+      const rackPositions: { px: number; py: number }[] = [];
       for (const side of [-1, 1]) {
         const rx = Math.round(hutPx + perpX * 6 * side + waterDirX * (-5));
         const ry = Math.round(hutPy + perpY * 6 * side + waterDirY * (-5));
         this._stampRack(pixels, NN, rx, ry, palette, mask);
+        rackPositions.push({ px: rx, py: ry });
       }
 
       // ── Hut ─────────────────────────────────────────────────────────────
@@ -195,9 +203,14 @@ export class FishingCampRenderer {
       const chimneyPx = hutPx - Math.floor(FISHING_HUT.w / 2) + 3;
       const chimneyPy = hutPy - FISHING_HUT.anchorY;
 
-      // Ocean fishing spot
-      const fishingPx = Math.round(dockPx + waterDirX * 35);
-      const fishingPy = Math.round(dockPy + waterDirY * 35);
+      // ── Moored boat position (where static boat is drawn) ────────────────
+      const mooredPx = Math.round(dockPx + waterDirX * 3);
+      const mooredPy = Math.round(dockPy + waterDirY * 3);
+
+      // ── Fishing spot (boat sails here to fish with nets) ─────────────────
+      const fishingDist = variant === 'ocean' ? 45 : 55;
+      const fishingPx = Math.round(dockPx + waterDirX * fishingDist);
+      const fishingPy = Math.round(dockPy + waterDirY * fishingDist);
 
       renderData.push({
         duchyIndex,
@@ -206,7 +219,9 @@ export class FishingCampRenderer {
         dockPx, dockPy,
         waterDirX, waterDirY,
         chimneyPx, chimneyPy,
+        mooredPx, mooredPy,
         fishingPx, fishingPy,
+        rackPositions,
       });
     }
 
@@ -258,24 +273,22 @@ export class FishingCampRenderer {
     }
   }
 
-  // ── River wharf (long, parallel to bank) ─────────────────────────────────
+  // ── River wharf (short dock at water's edge, parallel to bank) ───────────
   private _drawWharf(
     pixels: Uint32Array, NN: number,
-    hutPx: number, hutPy: number,
+    dockPx: number, dockPy: number,
     waterDirX: number, waterDirY: number,
     palette: FishingPalette, mask: Uint8Array,
   ): void {
     const perpX = -waterDirY, perpY = waterDirX;
-    // Wharf center = 9px toward water from hut
-    const bankX = Math.round(hutPx + waterDirX * 9);
-    const bankY = Math.round(hutPy + waterDirY * 9);
-    const halfLen = 13; // ±13 along bank = 27 total
-    const wharfDepth = 3; // planks wide toward water
+    // Centered at the water's edge (dockPx/dockPy)
+    const halfLen = 6; // ±6 along bank = 13 total
+    const wharfDepth = 2; // 2 planks deep toward water
 
     for (let along = -halfLen; along <= halfLen; along++) {
       for (let across = 0; across < wharfDepth; across++) {
-        const px = Math.round(bankX + perpX * along + waterDirX * across);
-        const py = Math.round(bankY + perpY * along + waterDirY * across);
+        const px = Math.round(dockPx + perpX * along + waterDirX * across);
+        const py = Math.round(dockPy + perpY * along + waterDirY * across);
         if (px < 0 || px >= NN || py < 0 || py >= NN) continue;
         const idx = py * NN + px;
         const shade = (Math.abs(along) + across) % palette.plank.length;

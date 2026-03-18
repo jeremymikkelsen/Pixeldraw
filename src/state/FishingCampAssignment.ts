@@ -12,6 +12,9 @@ import { HydrologyGenerator } from '../generators/HydrologyGenerator';
 import type { Duchy } from './Duchy';
 import type { FishingCampState } from './Building';
 import { RIVER_THRESHOLD } from '../generators/utils';
+
+// Wharfs require a proper river, not just a trickle (≥4× the basic threshold)
+const WHARF_RIVER_THRESHOLD = RIVER_THRESHOLD * 4;
 import { buildAdjacencyList } from '../utils/adjacency';
 
 export function assignFishingCamps(
@@ -52,14 +55,14 @@ export function assignFishingCamps(
       ? coastBorderCandidates
       : anyBorderCandidates;
 
-    // River candidates: land regions on or directly adjacent to a big river
+    // River candidates: land regions on or directly adjacent to a wide river (not a trickle)
     const riverCandidates = duchy.regions.filter(r => {
       if (r === duchy.capitalRegion) return false;
       const terrain = topo.terrainType[r];
       if (terrain !== 'coast' && terrain !== 'lowland' && terrain !== 'highland') return false;
-      if (hydro.flowAccumulation[r] >= RIVER_THRESHOLD) return true;
+      if (hydro.flowAccumulation[r] >= WHARF_RIVER_THRESHOLD) return true;
       if (!adj[r]) return false;
-      return adj[r].some(n => hydro.flowAccumulation[n] >= RIVER_THRESHOLD);
+      return adj[r].some(n => hydro.flowAccumulation[n] >= WHARF_RIVER_THRESHOLD);
     });
 
     let variant: 'ocean' | 'river';
@@ -86,7 +89,7 @@ export function assignFishingCamps(
         const nt = topo.terrainType[n];
         const isTarget = variant === 'ocean'
           ? (nt === 'ocean' || nt === 'water')
-          : hydro.flowAccumulation[n] >= RIVER_THRESHOLD;
+          : hydro.flowAccumulation[n] >= WHARF_RIVER_THRESHOLD;
         if (isTarget) {
           const npt = topo.mesh.points[n];
           wx += npt.x - pt.x;
@@ -99,7 +102,7 @@ export function assignFishingCamps(
     const waterDirY = wlen > 0 ? wy / wlen : 1;
 
     // Dock end: extend from hut toward water
-    const dockLength = variant === 'ocean' ? 16 : 12;
+    const dockLength = variant === 'ocean' ? 24 : 12;
     const dockPx = Math.round(hutPx + waterDirX * dockLength);
     const dockPy = Math.round(hutPy + waterDirY * dockLength);
 

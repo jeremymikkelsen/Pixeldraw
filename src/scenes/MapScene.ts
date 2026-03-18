@@ -16,6 +16,7 @@ import { loadSprite, type LoadedSprite } from '../generators/SpriteLoader';
 import { FarmRenderer } from '../generators/FarmRenderer';
 import { PastureAnimator } from '../generators/PastureAnimator';
 import { DeerAnimator } from '../generators/DeerAnimator';
+import { RoadTravelerAnimator } from '../generators/RoadTravelerAnimator';
 import { FenceRenderer } from '../generators/FenceRenderer';
 
 const MAP_SIZE = 3072;
@@ -60,6 +61,7 @@ export class MapScene extends Phaser.Scene {
   private _coastalRenderer!: CoastalRenderer;
   private _pastureAnimator: PastureAnimator | null = null;
   private _deerAnimator: DeerAnimator | null = null;
+  private _roadTravelerAnimator: RoadTravelerAnimator | null = null;
   private _duchyBorderPixels: { idx: number; color: number }[] = [];
   private _fenceFrontPixels: { idx: number; color: number }[] = [];
 
@@ -471,6 +473,9 @@ export class MapScene extends Phaser.Scene {
         if (this._deerAnimator) {
           this._deerAnimator.animate(this._pixels, time);
         }
+        if (this._roadTravelerAnimator) {
+          this._roadTravelerAnimator.animate(this._pixels, time);
+        }
         // Restore front fence above cows (bottom fence in 3/4 view)
         for (const fp of this._fenceFrontPixels) {
           this._pixels[fp.idx] = fp.color;
@@ -881,6 +886,17 @@ export class MapScene extends Phaser.Scene {
       this._deerAnimator = da;
     } else {
       this._deerAnimator = null;
+    }
+
+    // Road travelers (horse+cart and walkers between capitals)
+    if (this._state.roads.length > 0) {
+      const rta = new RoadTravelerAnimator(
+        this._state.roads, topo, PIXEL_RESOLUTION, pixels, seed, season,
+      );
+      rta.extrusionMap = mountainRenderer.extrusionMap;
+      this._roadTravelerAnimator = rta;
+    } else {
+      this._roadTravelerAnimator = null;
     }
 
     // Store refs

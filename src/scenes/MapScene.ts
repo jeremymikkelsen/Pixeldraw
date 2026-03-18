@@ -506,6 +506,13 @@ export class MapScene extends Phaser.Scene {
           data[off + 1] = Math.min(255, data[off + 1] + 25);
           data[off + 2] = Math.min(255, data[off + 2] + 25);
         }
+        // Re-apply fence pixels so hover highlight never obscures them
+        for (const fp of this._fencePixels) {
+          const off = fp.idx << 2;
+          data[off]     = fp.color & 0xFF;
+          data[off + 1] = (fp.color >> 8) & 0xFF;
+          data[off + 2] = (fp.color >> 16) & 0xFF;
+        }
       }
 
       this._ctx.putImageData(this._imageData, 0, 0);

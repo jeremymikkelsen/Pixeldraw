@@ -15,8 +15,8 @@ const INDEX_TERRAIN: TerrainType[] = [
 // Lighting
 const LIGHT_DIR_X = -0.707;
 const LIGHT_DIR_Y = -0.707;
-const LIGHT_STRENGTH = 3.0;
-const LIGHT_BASE = 0.75;
+const LIGHT_STRENGTH = 1.5;
+const LIGHT_BASE = 0.82;
 const LIGHT_STEPS = 5;
 
 export class GroundRenderer {
@@ -209,7 +209,7 @@ export class GroundRenderer {
           else baseRGB = 0xa0b8d0;                         // SNOW_SHADOW
           pixels[i] = applyBrightness(baseRGB, 1.0);
         } else {
-          lightFactor = Math.max(0.35, Math.min(1.0, lightFactor));
+          lightFactor = Math.max(0.60, Math.min(1.0, lightFactor));
           // Quantize for pixel-art stepped shading
           lightFactor = Math.floor(lightFactor * LIGHT_STEPS) / LIGHT_STEPS;
           pixels[i] = applyBrightness(baseRGB, lightFactor);

@@ -868,6 +868,27 @@ export class MapScene extends Phaser.Scene {
       pixels[bp.idx] = bp.color;
     }
 
+    // Re-capture pasture base colors from the fully-rendered pixel buffer so that
+    // PastureAnimator restores the correct final color (post-trees, post-mountains,
+    // post-buildings) rather than the flat green that FarmRenderer captured earlier.
+    if (farmRenderer.pastures.length > 0) {
+      const ext = mountainRenderer.extrusionMap;
+      const N = PIXEL_RESOLUTION;
+      for (const pd of farmRenderer.pastures) {
+        for (const p of pd.interiorPixels) {
+          const srcIdx = p.idx;
+          const px = srcIdx % N;
+          const py = (srcIdx - px) / N;
+          if (ext) {
+            const screenY = py - ext[srcIdx];
+            if (screenY >= 0 && screenY < N) p.color = pixels[screenY * N + px];
+          } else {
+            p.color = pixels[srcIdx];
+          }
+        }
+      }
+    }
+
     // Pasture animator (cows wander over pasture regions)
     if (farmRenderer.pastures.length > 0) {
       const pa = new PastureAnimator(farmRenderer.pastures, PIXEL_RESOLUTION, seed, season);

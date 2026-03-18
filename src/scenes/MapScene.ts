@@ -24,7 +24,7 @@ import { packABGR } from '../generators/TerrainPalettes';
 const MAP_SIZE = 3072;
 const PIXEL_RESOLUTION = 1536;
 
-const SCROLL_SPEED = 300;
+const SCROLL_SPEED = 600;
 const ZOOM_SPEED = 0.03;
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;

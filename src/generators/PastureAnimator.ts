@@ -149,10 +149,9 @@ export class PastureAnimator {
   }
 
   animate(pixels: Uint32Array, timeMs: number): void {
-    if (this._season === Season.Winter) return;
-
     const N = this._N;
     const ext = this.extrusionMap;
+    const isWinter = this._season === Season.Winter;
 
     for (const pasture of this._pastures) {
       // 1. Restore only the pixels we overwrote last frame
@@ -164,16 +163,39 @@ export class PastureAnimator {
       }
       pasture.dirtyScreen = [];
 
+      // In winter, cows huddle near the pasture center
+      const clusterX = (pasture.minX + pasture.maxX) / 2;
+      const clusterY = (pasture.minY + pasture.maxY) / 2;
+      const numCows = pasture.cows.length;
+
       // 2. Stamp cows at new positions
-      for (const cow of pasture.cows) {
-        const cx = Math.round(cow.homeX + Math.sin(timeMs * cow.freqX + cow.phaseX) * cow.radiusX);
-        const cy = Math.round(cow.homeY + Math.sin(timeMs * cow.freqY + cow.phaseY) * cow.radiusY);
+      for (let ci = 0; ci < numCows; ci++) {
+        const cow = pasture.cows[ci];
+
+        let cx: number;
+        let cy: number;
+
+        if (isWinter) {
+          // Spread cows in a tight cluster — each gets a fixed slot offset + tiny sway
+          const angle = (ci / numCows) * Math.PI * 2 + cow.phaseX;
+          const slotR = Math.min(numCows - 1, 2) * 2.5; // 0px for 1 cow, up to ~5px
+          const huddleX = clusterX + Math.cos(angle) * slotR;
+          const huddleY = clusterY + Math.sin(angle) * slotR * 0.6;
+          cx = Math.round(huddleX + Math.sin(timeMs * 0.00008 + cow.phaseX) * 1.2);
+          cy = Math.round(huddleY + Math.sin(timeMs * 0.00007 + cow.phaseY) * 0.8);
+        } else {
+          cx = Math.round(cow.homeX + Math.sin(timeMs * cow.freqX + cow.phaseX) * cow.radiusX);
+          cy = Math.round(cow.homeY + Math.sin(timeMs * cow.freqY + cow.phaseY) * cow.radiusY);
+        }
 
         // Clamp to safe bounds
         const sx = Math.max(pasture.minX, Math.min(pasture.maxX - COW_W, cx));
         const sy = Math.max(pasture.minY, Math.min(pasture.maxY - COW_H, cy));
 
-        const vx = Math.cos(timeMs * cow.freqX + cow.phaseX);
+        // In winter, face toward cluster center; otherwise use wander velocity
+        const vx = isWinter
+          ? (clusterX - cx)
+          : Math.cos(timeMs * cow.freqX + cow.phaseX);
         const facingRight = cow.mirrorBase ? vx > 0 : vx <= 0;
         const sprite = facingRight ? COW_RIGHT : COW_LEFT;
 

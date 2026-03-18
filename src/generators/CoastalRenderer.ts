@@ -219,7 +219,7 @@ export class CoastalRenderer {
     // Paint beaches: land pixels within BEACH_WIDTH of ocean
     // ----------------------------------------------------------------
     const BEACH_WIDTH = 6; // pixels of sandy beach
-    const COBBLE_SHADES = [0x808078, 0x909088, 0x9c9c94, 0xa8a8a0, 0xb4b4ac];
+    const COBBLE_SHADES = [0x787880, 0x888890, 0x94949c, 0xa0a0a8, 0xacacb4];
 
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
@@ -236,12 +236,12 @@ export class CoastalRenderer {
         const noiseVal = beachNoise(wx * 0.01, wy * 0.01);
         const edgeVariation = BEACH_WIDTH + noiseVal * 2;
 
-        // Skip pixels beyond the beach + cobble zone
-        if (dist > edgeVariation + 2) continue;
+        // Skip pixels beyond the beach + cobble zone (cobble extends up to 2px past sand)
+        if (dist > edgeVariation + 2.5) continue;
 
-        // Cobble rock: 1-2px band at the inland edge of the beach
-        const cobbleWidth = 1.5 + beachNoise(wx * 0.03, wy * 0.03) * 0.5; // 1-2px
-        if (dist > edgeVariation - cobbleWidth && dist <= edgeVariation + 2) {
+        // Cobble rock: tight 1-2px band at the inland edge of the beach
+        const cobbleWidth = 1.0 + (beachNoise(wx * 0.03, wy * 0.03) + 1) * 0.5; // 1-2px
+        if (dist > edgeVariation - cobbleWidth && dist <= edgeVariation + cobbleWidth) {
           const cobbleN = beachNoise(wx * 0.15, wy * 0.15);
           const ci = Math.min(COBBLE_SHADES.length - 1,
             Math.floor(((cobbleN + 1) / 2) * COBBLE_SHADES.length));

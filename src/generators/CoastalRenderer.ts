@@ -408,21 +408,8 @@ export class CoastalRenderer {
             pixels[outIdx] = this._baseColors.get(cp.idx)!;
           }
         } else {
-          // Open water: swells only — no white foam, just subtle water rise/fall
-          const base = this._baseColors.get(cp.idx)!;
-          const swellFactor = Math.max(0, 1.0 - Math.abs(distToFront) / 3);
-          if (swellFactor > 0.05) {
-            const r = base & 0xff;
-            const g = (base >> 8) & 0xff;
-            const b = (base >> 16) & 0xff;
-            const lift = Math.floor(swellFactor * 20);
-            const sr = Math.min(255, r + lift);
-            const sg = Math.min(255, g + lift + Math.floor(lift * 0.3));
-            const sb = Math.min(255, b + lift + Math.floor(lift * 0.5));
-            pixels[outIdx] = (255 << 24) | (sb << 16) | (sg << 8) | sr;
-          } else {
-            pixels[outIdx] = base;
-          }
+          // Open water: no brightening, just base color
+          pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }
       }
     }

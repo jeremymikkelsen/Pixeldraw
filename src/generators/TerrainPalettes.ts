@@ -10,7 +10,7 @@ export interface TerrainPalette {
 // Default (Summer) palettes — the baseline
 const PALETTES_SUMMER: Record<TerrainType, TerrainPalette> = {
   ocean:    { base: [0x1a2e4a, 0x223d5e, 0x2a4a6b, 0x325878, 0x3a6585], detailFreq: 0.06, detailAmp: 0.7 },
-  water:    { base: [0x2a5c80, 0x347a9e, 0x3a8cb5, 0x4a9cc5, 0x5aaccc], detailFreq: 0.08, detailAmp: 0.8 },
+  water:    { base: [0x1e3450, 0x264264, 0x2e5070, 0x385e7e, 0x406c8c], detailFreq: 0.07, detailAmp: 0.7 },
   coast:    { base: [0x5a8840, 0x6a9c50, 0x7aac6a, 0x8abc70, 0x9acc80], detailFreq: 0.15, detailAmp: 0.6 },
   lowland:  { base: [0x356828, 0x3e7c30, 0x4a8c40, 0x58a048, 0x65ac55], detailFreq: 0.18, detailAmp: 0.7 },
   highland: { base: [0x2a5420, 0x336428, 0x3a6c30, 0x447a38, 0x4e8840], detailFreq: 0.14, detailAmp: 0.6 },
@@ -21,7 +21,7 @@ const PALETTES_SUMMER: Record<TerrainType, TerrainPalette> = {
 // Spring: lush greens, slightly brighter than summer
 const PALETTES_SPRING: Record<TerrainType, TerrainPalette> = {
   ocean:    { base: [0x1a2e4a, 0x223d5e, 0x2a4a6b, 0x325878, 0x3a6585], detailFreq: 0.06, detailAmp: 0.7 },
-  water:    { base: [0x2a5c80, 0x347a9e, 0x3a8cb5, 0x4a9cc5, 0x5aaccc], detailFreq: 0.08, detailAmp: 0.8 },
+  water:    { base: [0x1e3450, 0x264264, 0x2e5070, 0x385e7e, 0x406c8c], detailFreq: 0.07, detailAmp: 0.7 },
   coast:    { base: [0x4e9838, 0x5eac48, 0x70bc5a, 0x82cc68, 0x94dc78], detailFreq: 0.15, detailAmp: 0.6 },
   lowland:  { base: [0x2e7820, 0x389028, 0x44a038, 0x54b448, 0x64c458], detailFreq: 0.18, detailAmp: 0.7 },
   highland: { base: [0x286020, 0x307428, 0x388430, 0x429438, 0x4ea040], detailFreq: 0.14, detailAmp: 0.6 },
@@ -32,7 +32,7 @@ const PALETTES_SPRING: Record<TerrainType, TerrainPalette> = {
 // Fall: same green ground as summer — seasonal change is in the trees, not the grass
 const PALETTES_FALL: Record<TerrainType, TerrainPalette> = {
   ocean:    { base: [0x1a2e4a, 0x223d5e, 0x2a4a6b, 0x325878, 0x3a6585], detailFreq: 0.06, detailAmp: 0.7 },
-  water:    { base: [0x2a5c80, 0x347a9e, 0x3a8cb5, 0x4a9cc5, 0x5aaccc], detailFreq: 0.08, detailAmp: 0.8 },
+  water:    { base: [0x1e3450, 0x264264, 0x2e5070, 0x385e7e, 0x406c8c], detailFreq: 0.07, detailAmp: 0.7 },
   coast:    { base: [0x5a8840, 0x6a9c50, 0x7aac6a, 0x8abc70, 0x9acc80], detailFreq: 0.15, detailAmp: 0.6 },
   lowland:  { base: [0x356828, 0x3e7c30, 0x4a8c40, 0x58a048, 0x65ac55], detailFreq: 0.18, detailAmp: 0.7 },
   highland: { base: [0x2a5420, 0x336428, 0x3a6c30, 0x447a38, 0x4e8840], detailFreq: 0.14, detailAmp: 0.6 },
@@ -43,7 +43,7 @@ const PALETTES_FALL: Record<TerrainType, TerrainPalette> = {
 // Winter: mostly snow-covered; base colors are bright spring green for visible patches
 const PALETTES_WINTER: Record<TerrainType, TerrainPalette> = {
   ocean:    { base: [0x182838, 0x1e3448, 0x264058, 0x2e4c66, 0x365874], detailFreq: 0.06, detailAmp: 0.7 },
-  water:    { base: [0x284c6c, 0x2e6080, 0x347494, 0x3e84a4, 0x4894b0], detailFreq: 0.08, detailAmp: 0.8 },
+  water:    { base: [0x1c2e40, 0x223a50, 0x2a465e, 0x32526c, 0x3a5e7a], detailFreq: 0.07, detailAmp: 0.7 },
   coast:    { base: [0x3c8030, 0x4c9440, 0x5ca850, 0x6cbc60, 0x7ccc70], detailFreq: 0.15, detailAmp: 0.6 },
   lowland:  { base: [0x2e7820, 0x389028, 0x44a438, 0x54b848, 0x64c858], detailFreq: 0.18, detailAmp: 0.7 },
   highland: { base: [0x286820, 0x347c28, 0x409030, 0x4ca438, 0x58b440], detailFreq: 0.14, detailAmp: 0.6 },

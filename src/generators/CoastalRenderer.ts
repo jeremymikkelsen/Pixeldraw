@@ -404,7 +404,7 @@ export class CoastalRenderer {
           // Near-shore zone: foam segments over sand, water otherwise.
           // No static sand — base color IS the original water.
           const segmentNoise = Math.sin(cp.phase * 3.7) * Math.cos(cp.phase * 2.1 + timeSec * 0.15);
-          const showFoam = segmentNoise > -0.2;
+          const showFoam = segmentNoise > -0.5;
 
           if (showFoam && Math.abs(distToFront) < 1.5) {
             const bright = Math.abs(distToFront) < 0.5;

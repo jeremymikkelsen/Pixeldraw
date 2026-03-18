@@ -77,13 +77,15 @@ export function renderDuchies(
       const duchyIdx = regionToDuchy[region];
       if (duchyIdx < 0) continue;
 
-      // Check 4 neighbors for different duchy
+      // Check 4 neighbors for different duchy — skip borders against ocean/water
       let isBorder = false;
       const neighbors = [i - 1, i + 1, i - N, i + N];
       for (const ni of neighbors) {
         const nRegion = regionGrid[ni];
         const nDuchy = regionToDuchy[nRegion];
         if (nDuchy !== duchyIdx) {
+          const nTerrain = state.topo.terrainType[nRegion];
+          if (nTerrain === 'ocean' || nTerrain === 'water') continue;
           isBorder = true;
           break;
         }
@@ -131,13 +133,15 @@ export function renderDuchyBordersOnTop(
       const duchyIdx = regionToDuchy[region];
       if (duchyIdx < 0) continue;
 
-      // Check 4 neighbors for different duchy
+      // Check 4 neighbors for different duchy — skip borders against ocean/water
       let isBorder = false;
       const neighbors = [i - 1, i + 1, i - N, i + N];
       for (const ni of neighbors) {
         const nRegion = regionGrid[ni];
         const nDuchy = regionToDuchy[nRegion];
         if (nDuchy !== duchyIdx) {
+          const nTerrain = state.topo.terrainType[nRegion];
+          if (nTerrain === 'ocean' || nTerrain === 'water') continue;
           isBorder = true;
           break;
         }

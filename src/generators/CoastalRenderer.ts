@@ -238,7 +238,7 @@ export class CoastalRenderer {
 
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
-        const cobbleWidth = 1.0 + (beachNoise(wx * 0.03, wy * 0.03) + 1) * 0.5; // 1-2px
+        const cobbleWidth = 2.0 + (beachNoise(wx * 0.03, wy * 0.03) + 1) * 0.5; // 2-3px
 
         if (dist <= cobbleWidth) {
           const cobbleN = beachNoise(wx * 0.15, wy * 0.15);

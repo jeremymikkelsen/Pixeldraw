@@ -135,8 +135,8 @@ export class TopographyGenerator {
 
     const pds = new PoissonDiskSampling({
       shape: [this.size, this.size],
-      minDistance: 28,
-      maxDistance: 56,
+      minDistance: 31,
+      maxDistance: 62,
       tries: 20,
     }, rng);
 

@@ -50,7 +50,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
   const hydro = new HydrologyGenerator(topo, seed);
   const { duchies, regionToDuchy } = generateDuchies(topo, hydro, seed);
   const roads = generateRoads(topo, hydro, duchies);
-  const agImprovements = assignAgImprovements(topo, hydro, duchies, seed);
+  const agImprovements = assignAgImprovements(topo, hydro, duchies, seed, roads);
   const king = selectKing(seed);
 
   // Initialize economies for each duchy
@@ -83,7 +83,7 @@ export function loadGameState(save: SaveData): GameState {
   const hydro = new HydrologyGenerator(topo, save.seed);
   const { duchies, regionToDuchy } = generateDuchies(topo, hydro, save.seed);
   const roads = generateRoads(topo, hydro, duchies);
-  const agImprovements = assignAgImprovements(topo, hydro, duchies, save.seed);
+  const agImprovements = assignAgImprovements(topo, hydro, duchies, save.seed, roads);
   const king = selectKing(save.seed);
 
   return {

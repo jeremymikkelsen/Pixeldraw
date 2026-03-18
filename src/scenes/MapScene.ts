@@ -797,11 +797,6 @@ export class MapScene extends Phaser.Scene {
     // Structures (3/4 perspective with ground shadows)
     const buildingMask = structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
 
-    // Duchy borders on top of everything — rendered last so they're always visible
-    if (renderer.regionGrid) {
-      renderDuchyBordersOnTop(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION, mountainRenderer.extrusionMap);
-    }
-
     // Capture building pixel colors NOW (before river animation overwrites them)
     const buildingPixelColors: { idx: number; color: number }[] = [];
     for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
@@ -813,20 +808,16 @@ export class MapScene extends Phaser.Scene {
     // Combine bridge + building pixels for per-frame restoration above river animation
     this._buildingPixels = [...bridgePixelColors, ...buildingPixelColors];
 
-    // Capture duchy border pixels for per-frame restoration (keeps borders above animation)
+    // Duchy borders on top of everything — rendered last so they're always visible.
+    // Capture changed pixels by comparing before/after so we get exact screen-space indices.
     this._duchyBorderPixels = [];
     if (renderer.regionGrid) {
-      const N = PIXEL_RESOLUTION;
-      for (let bi = 0; bi < N * N; bi++) {
-        // A border pixel is one whose region differs from at least one 4-neighbour
-        const r = renderer.regionGrid[bi];
-        const x = bi % N, y = (bi - x) / N;
-        let isBorder = false;
-        if (x > 0     && renderer.regionGrid[bi - 1] !== r) isBorder = true;
-        if (x < N - 1 && renderer.regionGrid[bi + 1] !== r) isBorder = true;
-        if (y > 0     && renderer.regionGrid[bi - N] !== r) isBorder = true;
-        if (y < N - 1 && renderer.regionGrid[bi + N] !== r) isBorder = true;
-        if (isBorder) this._duchyBorderPixels.push({ idx: bi, color: pixels[bi] });
+      const presBorder = pixels.slice();
+      renderDuchyBordersOnTop(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION, mountainRenderer.extrusionMap);
+      for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
+        if (pixels[bi] !== presBorder[bi]) {
+          this._duchyBorderPixels.push({ idx: bi, color: pixels[bi] });
+        }
       }
     }
 

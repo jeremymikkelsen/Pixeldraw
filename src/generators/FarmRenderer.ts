@@ -297,12 +297,12 @@ export class FarmRenderer {
       return applyBrightness(n2 > 0 ? 0x685040 : 0x584030, 1.0);
     }
 
-    // ── Spring: brown soil with small green sprout clusters ──
+    // ── Spring: brown soil with dense green sprout clusters ──
     if (season === Season.Spring) {
-      const gp = ((Math.floor(perp) % 5) + 5) % 5;
-      const ga = ((Math.floor(along) % 5) + 5) % 5;
-      // 1×2 sprout (1 wide, 2 tall) in each 5×5 cell
-      if (gp >= 1 && gp <= 2 && ga === 2) {
+      const gp = ((Math.floor(perp) % 4) + 4) % 4;
+      const ga = ((Math.floor(along) % 4) + 4) % 4;
+      // 2×2 sprout cluster in each 4×4 cell (~25% green coverage)
+      if ((gp === 1 || gp === 2) && (ga === 1 || ga === 2)) {
         const n = noise(px * 0.25, py * 0.25);
         return applyBrightness(n > 0 ? 0x78b830 : 0x4a8020, GRAIN_BRIGHTNESS);
       }

@@ -24,6 +24,8 @@ function isValidLand(t: TerrainType): boolean {
   return t === 'coast' || t === 'lowland' || t === 'highland';
 }
 
+const LOWLAND_FRACTION = 0.5;
+
 /**
  * Generate 9 duchies placed on the map.
  * Returns the duchies array and a per-region mapping (regionToDuchy).
@@ -39,8 +41,10 @@ export function generateDuchies(
 
   // --- Step 1: Identify valid land regions ---
   const isLand = new Uint8Array(N);
+  const isLowland = new Uint8Array(N);
   for (let r = 0; r < N; r++) {
     if (isValidLand(topo.terrainType[r])) isLand[r] = 1;
+    if (topo.terrainType[r] === 'lowland') isLowland[r] = 1;
   }
 
   // --- Step 2: Tag river and forest regions ---
@@ -103,7 +107,7 @@ export function generateDuchies(
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     const rng = mulberry32(seed ^ 0xd0c4e ^ (attempt * 7919));
     const result = _tryGenerate(
-      rng, mesh, adj, isLand, hasRiver, hasForest, riverDist,
+      rng, mesh, adj, isLand, isLowland, hasRiver, hasForest, riverDist,
       landRegions, landMinX, landMaxX, landMinY, landMaxY, N,
     );
     if (result) return result;
@@ -112,7 +116,7 @@ export function generateDuchies(
   // Fallback: return best-effort result without strict validation
   const rng = mulberry32(seed ^ 0xd0c4e ^ 999);
   return _tryGenerate(
-    rng, mesh, adj, isLand, hasRiver, hasForest, riverDist,
+    rng, mesh, adj, isLand, isLowland, hasRiver, hasForest, riverDist,
     landRegions, landMinX, landMaxX, landMinY, landMaxY, N,
     true, // skipValidation
   )!;
@@ -123,6 +127,7 @@ function _tryGenerate(
   mesh: { points: { x: number; y: number }[]; numRegions: number },
   adj: number[][],
   isLand: Uint8Array,
+  isLowland: Uint8Array,
   hasRiver: Uint8Array,
   hasForest: Uint8Array,
   riverDist: Float32Array,
@@ -157,9 +162,10 @@ function _tryGenerate(
         const dx = p.x - targetX;
         const dy = p.y - targetY;
         const positionDist = Math.sqrt(dx * dx + dy * dy);
-        // Score: distance to target + heavy penalty for being far from rivers
+        // Score: distance to target + heavy penalty for being far from rivers + bonus for lowland
         const rDist = riverDist[r] === Infinity ? 20 : riverDist[r];
-        const score = positionDist + rDist * 80;
+        const lowlandBonus = isLowland[r] ? -40 : 0;
+        const score = positionDist + rDist * 80 + lowlandBonus;
         if (score < bestScore) {
           bestScore = score;
           bestR = r;
@@ -249,9 +255,11 @@ function _tryGenerate(
   // Track whether each duchy has met its constraints
   const duchyHasRiver = new Uint8Array(NUM_DUCHIES);
   const duchyHasForest = new Uint8Array(NUM_DUCHIES);
+  const duchyLowlandCount = new Int32Array(NUM_DUCHIES);
   for (let d = 0; d < NUM_DUCHIES; d++) {
     if (hasRiver[seeds[d]]) duchyHasRiver[d] = 1;
     if (hasForest[seeds[d]]) duchyHasForest[d] = 1;
+    if (isLowland[seeds[d]]) duchyLowlandCount[d] = 1;
   }
 
   let anyGrew = true;
@@ -279,10 +287,12 @@ function _tryGenerate(
         // Pick best candidate
         let bestCandidate = candidates[0];
         let bestPriority = 0;
+        const needsLowland = duchyLowlandCount[d] / duchyRegionCount[d] < LOWLAND_FRACTION;
         for (const n of candidates) {
           let priority = 0;
           if (!duchyHasRiver[d] && hasRiver[n]) priority += 10;
           if (!duchyHasForest[d] && hasForest[n]) priority += 5;
+          if (needsLowland && isLowland[n]) priority += 8;
           // Slight bias toward river-adjacent regions
           if (riverDist[n] < 3) priority += 1;
           if (priority > bestPriority) {
@@ -295,6 +305,7 @@ function _tryGenerate(
         duchyRegionCount[d]++;
         if (hasRiver[bestCandidate]) duchyHasRiver[d] = 1;
         if (hasForest[bestCandidate]) duchyHasForest[d] = 1;
+        if (isLowland[bestCandidate]) duchyLowlandCount[d]++;
         queues[d].push(bestCandidate);
         queues[d].push(r); // re-add source to keep exploring
         claimed = true;
@@ -308,6 +319,9 @@ function _tryGenerate(
     for (let d = 0; d < NUM_DUCHIES; d++) {
       if (!duchyHasRiver[d] || !duchyHasForest[d]) {
         return null; // retry with different seed
+      }
+      if (duchyLowlandCount[d] / duchyRegionCount[d] < LOWLAND_FRACTION) {
+        return null; // retry — duchy lacks ≥50% lowland regions
       }
     }
   }

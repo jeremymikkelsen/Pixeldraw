@@ -12,12 +12,13 @@ import { RIVER_THRESHOLD } from '../generators/utils';
 export type AgImprovementType = 'grain' | 'garden' | 'pasture';
 
 /**
- * Assign one grain field, one garden, and one pasture per duchy.
+ * Assign 3 grain fields, 2 gardens, and 2 pastures per duchy.
  * Eligible: lowland, no river, mid elevation, not capital region, not on a road.
  * Returns a Map from regionIndex → improvement type.
  */
-const TILES_PER_DUCHY = 40;
-const GRAIN_RATIO = 0.50; // 50% grain, 25% garden, 25% pasture
+const GRAIN_COUNT  = 3;
+const GARDEN_COUNT = 2;
+const PASTURE_COUNT = 2;
 
 export function assignAgImprovements(
   topo: TopographyGenerator,
@@ -51,26 +52,21 @@ export function assignAgImprovements(
 
     if (eligible.length === 0) continue;
 
-    // Shuffle and take up to TILES_PER_DUCHY
+    // Shuffle eligible regions
     const shuffled = [...eligible];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
 
-    const count = Math.min(TILES_PER_DUCHY, shuffled.length);
-    const grainCount = Math.floor(count * GRAIN_RATIO);
-    const remaining = count - grainCount;
-    const gardenCount = Math.floor(remaining / 2);
-
-    for (let t = 0; t < count; t++) {
-      if (t < grainCount) {
-        result.set(shuffled[t], 'grain');
-      } else if (t < grainCount + gardenCount) {
-        result.set(shuffled[t], 'garden');
-      } else {
-        result.set(shuffled[t], 'pasture');
-      }
+    // Assign fixed counts: 3 grain, 2 garden, 2 pasture
+    const types: AgImprovementType[] = [
+      ...Array(GRAIN_COUNT).fill('grain'),
+      ...Array(GARDEN_COUNT).fill('garden'),
+      ...Array(PASTURE_COUNT).fill('pasture'),
+    ];
+    for (let t = 0; t < types.length && t < shuffled.length; t++) {
+      result.set(shuffled[t], types[t]);
     }
   }
 

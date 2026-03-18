@@ -47,21 +47,17 @@ export class FenceRenderer {
     for (const pd of pastures) {
       const r = pd.regionIndex;
 
-      // Find any half-edge that starts at region r
-      let startEdge = -1;
+      // Linear scan over all half-edges — avoids the ring-traversal break on hull edges.
+      // For each half-edge e whose source vertex is r, the Voronoi edge runs from
+      // the circumcenter of triOfEdge(e) to the circumcenter of triOfEdge(halfedges[prevEdge(e)]).
       for (let e = 0; e < numEdges; e++) {
-        if (triangles[e] === r) { startEdge = e; break; }
-      }
-      if (startEdge === -1) continue;
+        if (triangles[e] !== r) continue;
 
-      // Walk the half-edge ring around r
-      let e = startEdge;
-      do {
         const fromTri  = triOfEdge(e);
         const prev     = prevEdge(e);
-        const neighbor = triangles[prev];    // region across this Voronoi edge
+        const neighbor = triangles[prev];   // region across this Voronoi edge
         const opp      = halfedges[prev];
-        if (opp === -1) { break; }          // hull — incomplete polygon, stop
+        if (opp === -1) continue;           // hull edge — no circumcenter on the other side, skip
         const toTri    = triOfEdge(opp);
 
         // Only draw fence on exterior edges (neighbour is not a pasture)
@@ -77,9 +73,7 @@ export class FenceRenderer {
             this._rail(pixels, x0, y0, x1, y1, N, ext, fencePixels, regionGrid, r, neighbor);
           }
         }
-
-        e = opp;
-      } while (e !== startEdge);
+      }
     }
 
     return { fencePixels };

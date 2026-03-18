@@ -163,10 +163,12 @@ export class RoadTravelerAnimator {
 
     // 1. Restore pixels from last frame
     for (const d of this._dirty) {
-      const screenIdx = d.screenIdx;
-      pixels[screenIdx] = d.color;
+      pixels[d.screenIdx] = d.color;
     }
     this._dirty = [];
+    // Track which screen pixels have already been saved this frame so we never
+    // overwrite the first (original) color with a cart color on a second hit.
+    const savedThisFrame = new Set<number>();
 
     // No travelers in winter
     if (this._season === Season.Winter) return;
@@ -234,8 +236,12 @@ export class RoadTravelerAnimator {
           const screenIdx = this._screenIdx(srcIdx, N, ext);
           if (screenIdx < 0) continue;
 
-          // Save original color for restore
-          this._dirty.push({ screenIdx, srcIdx, color: pixels[screenIdx] });
+          // Save original color for restore — only once per screenIdx per frame.
+          // A second hit would save a cart color, causing a persistent artifact.
+          if (!savedThisFrame.has(screenIdx)) {
+            this._dirty.push({ screenIdx, srcIdx, color: pixels[screenIdx] });
+            savedThisFrame.add(screenIdx);
+          }
           pixels[screenIdx] = colors[cell];
         }
       }

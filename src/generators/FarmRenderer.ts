@@ -1,11 +1,11 @@
 /**
- * FarmRenderer — renders grain fields, veggie fields, and cow pastures
+ * FarmRenderer — renders grain fields, gardens, and cow pastures
  * onto the pixel buffer in a single pass over regionGrid.
  *
  * Grain fields: 3/4-perspective stalk columns oriented along the region's
  * long axis. Stalks are 2px wide × 3px tall with a 2px furrow gap between rows.
  *
- * Veggie fields: tilled soil with 2-3 crop patches, each filled with an
+ * Gardens: tilled soil with 2-3 crop patches, each filled with an
  * organic dot pattern using noise.
  *
  * Pastures: worn/patchy grass. Cow animation is handled by PastureAnimator.
@@ -20,13 +20,21 @@ import type { AgImprovementType } from '../state/AgImprovements';
 
 const GRAIN_BRIGHTNESS = 1.25;
 
-// ── Veggie field palettes ─────────────────────────────────────────────────────
+// ── Garden palettes ───────────────────────────────────────────────────────────
 
 const VEGGIE_SOIL = {
   [Season.Winter]: packABGR(0x68, 0x58, 0x48),
   [Season.Spring]: packABGR(0x3d, 0x2b, 0x14),
   [Season.Summer]: packABGR(0x48, 0x34, 0x18),
   [Season.Fall]: packABGR(0x52, 0x3c, 0x20),
+};
+
+// ── Dirt path color — worn earth at field/garden cell boundaries ──────────────
+const DIRT_PATH_COLOR = {
+  [Season.Winter]: packABGR(0x7a, 0x6a, 0x5a),
+  [Season.Spring]: packABGR(0x56, 0x3c, 0x20),
+  [Season.Summer]: packABGR(0x50, 0x38, 0x1c),
+  [Season.Fall]:   packABGR(0x5c, 0x40, 0x22),
 };
 
 // Per-crop-type leaf color pairs (shadow, highlight) — Spring and Summer
@@ -62,7 +70,7 @@ const PASTURE_B = {
 // ── RegionMeta: axis info per improvement region ──────────────────────────────
 interface RegionMeta {
   minX: number; maxX: number; minY: number; maxY: number;
-  // Long-axis unit vector (direction of rows in grain/veggie)
+  // Long-axis unit vector (direction of rows in grain/garden)
   longX: number; longY: number;
   // Perp unit vector (stalk growth direction)
   perpX: number; perpY: number;
@@ -75,10 +83,16 @@ export interface PastureData {
   interiorPixels: { idx: number; color: number }[];
 }
 
+export interface GardenData {
+  regionIndex: number;
+  minX: number; maxX: number; minY: number; maxY: number;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 export class FarmRenderer {
   farmMask: Uint8Array | null = null;
   pastures: PastureData[] = [];
+  gardens: GardenData[] = [];
 
   render(
     pixels: Uint32Array,
@@ -123,7 +137,7 @@ export class FarmRenderer {
 
     // Compute PCA long axis and perpendicular for each region
     const meta = new Map<number, RegionMeta>();
-    const veggieCrops = new Map<number, [number, number, number]>();
+    const gardenCrops = new Map<number, [number, number, number]>();
 
     for (const [r, s] of stats) {
       if (s.n === 0) continue;
@@ -155,19 +169,19 @@ export class FarmRenderer {
         perpX: -ly, perpY: lx,
       });
 
-      if (improvements.get(r) === 'veggie') {
+      if (improvements.get(r) === 'garden') {
         const rng2 = mulberry32(seed ^ (r * 0xa3b4c5));
         const types: number[] = [0, 1, 2];
         [types[0], types[Math.floor(rng2() * 3)]] = [types[Math.floor(rng2() * 3)], types[0]];
-        veggieCrops.set(r, [types[0], types[1], types[2]]);
+        gardenCrops.set(r, [types[0], types[1], types[2]]);
       }
     }
 
-    // Precompute pumpkin centers for fall veggie regions (2–3 per region)
-    const veggiePumpkins = new Map<number, { cx: number; cy: number }[]>();
+    // Precompute pumpkin centers for fall garden regions (2–3 per region)
+    const gardenPumpkins = new Map<number, { cx: number; cy: number }[]>();
     if (season === Season.Fall) {
       for (const [r, m] of meta) {
-        if (improvements.get(r) !== 'veggie') continue;
+        if (improvements.get(r) !== 'garden') continue;
         const rng3 = mulberry32(seed ^ (r * 0xb7c3d5) ^ 0xf00d);
         const count = 2 + (rng3() > 0.5 ? 1 : 0);
         const W = m.maxX - m.minX;
@@ -179,13 +193,14 @@ export class FarmRenderer {
             cy: Math.round(m.minY + (0.15 + rng3() * 0.70) * H),
           });
         }
-        veggiePumpkins.set(r, centers);
+        gardenPumpkins.set(r, centers);
       }
     }
 
     // Allocate mask
     this.farmMask = new Uint8Array(N * N);
     this.pastures = [];
+    this.gardens = [];
     const pastureMap = new Map<number, PastureData>();
 
     // Pre-create pasture data objects
@@ -202,6 +217,18 @@ export class FarmRenderer {
       }
     }
 
+    // Pre-create garden data objects
+    for (const [r, type] of improvements) {
+      if (type === 'garden') {
+        const m = meta.get(r);
+        if (!m) continue;
+        this.gardens.push({
+          regionIndex: r,
+          minX: m.minX, maxX: m.maxX, minY: m.minY, maxY: m.maxY,
+        });
+      }
+    }
+
     // Pass 2: render
     for (let i = 0; i < N * N; i++) {
       const r = regionGrid[i];
@@ -213,13 +240,26 @@ export class FarmRenderer {
       const py = (i - px) / N;
       this.farmMask![i] = 1;
 
+      // 1-px dirt path at Voronoi cell boundaries (grain and garden only, not pasture)
+      if (type !== 'pasture') {
+        const isBoundary =
+          (px > 0 && regionGrid[i - 1] !== r) ||
+          (px < N - 1 && regionGrid[i + 1] !== r) ||
+          (py > 0 && regionGrid[i - N] !== r) ||
+          (py < N - 1 && regionGrid[i + N] !== r);
+        if (isBoundary) {
+          pixels[i] = DIRT_PATH_COLOR[season];
+          continue;
+        }
+      }
+
       switch (type) {
         case 'grain':
           pixels[i] = this._grainPixel(px, py, m, season, noise);
           break;
-        case 'veggie': {
-          const crops = veggieCrops.get(r)!;
-          const pumpkins = veggiePumpkins.get(r);
+        case 'garden': {
+          const crops = gardenCrops.get(r)!;
+          const pumpkins = gardenPumpkins.get(r);
           pixels[i] = this._veggiePixel(px, py, m, crops, season, noise, pumpkins);
           break;
         }
@@ -289,7 +329,7 @@ export class FarmRenderer {
     return applyBrightness(n > 0 ? 0xf0cc50 : 0xe8c040, GRAIN_BRIGHTNESS);
   }
 
-  // ── Veggie patch pixel ──────────────────────────────────────────────────────
+  // ── Garden patch pixel ──────────────────────────────────────────────────────
   private _veggiePixel(
     px: number, py: number,
     m: RegionMeta,
@@ -336,7 +376,7 @@ export class FarmRenderer {
       if (pumpkins) {
         for (const { cx, cy } of pumpkins) {
           const dx = px - cx, dy = py - cy;
-          if (dx * dx + dy * dy <= 4) {
+          if (dx * dx + dy * dy <= 1) {
             return applyBrightness(dy < 0 ? 0xc05810 : 0xe07018, 1.0);
           }
         }

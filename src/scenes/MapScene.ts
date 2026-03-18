@@ -18,6 +18,7 @@ import { PastureAnimator } from '../generators/PastureAnimator';
 import { DeerAnimator } from '../generators/DeerAnimator';
 import { RoadTravelerAnimator } from '../generators/RoadTravelerAnimator';
 import { FenceRenderer } from '../generators/FenceRenderer';
+import { GardenWorkerAnimator } from '../generators/GardenWorkerAnimator';
 
 const MAP_SIZE = 3072;
 const PIXEL_RESOLUTION = 1536;
@@ -62,6 +63,7 @@ export class MapScene extends Phaser.Scene {
   private _pastureAnimator: PastureAnimator | null = null;
   private _deerAnimator: DeerAnimator | null = null;
   private _roadTravelerAnimator: RoadTravelerAnimator | null = null;
+  private _gardenWorkerAnimator: GardenWorkerAnimator | null = null;
   private _duchyBorderPixels: { idx: number; color: number }[] = [];
   private _fencePixels: { idx: number; color: number }[] = [];
 
@@ -478,6 +480,9 @@ export class MapScene extends Phaser.Scene {
         if (this._roadTravelerAnimator) {
           this._roadTravelerAnimator.animate(this._pixels, time);
         }
+        if (this._gardenWorkerAnimator) {
+          this._gardenWorkerAnimator.animate(this._pixels, time);
+        }
         // Restore building/bridge pixels so they always render above rivers and coast
         for (const bp of this._buildingPixels) {
           this._pixels[bp.idx] = bp.color;
@@ -759,7 +764,7 @@ export class MapScene extends Phaser.Scene {
       renderDuchies(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION);
     }
 
-    // Agricultural improvements — grain fields, veggie fields, cow pastures
+    // Agricultural improvements — grain fields, gardens, cow pastures
     const farmRenderer = new FarmRenderer();
     if (this._state.agImprovements && renderer.regionGrid) {
       farmRenderer.render(pixels, PIXEL_RESOLUTION, this._state.agImprovements,
@@ -794,6 +799,7 @@ export class MapScene extends Phaser.Scene {
     const { structures, mask: structureMask } = structureRenderer.placeStructures(
       topo, hydro, PIXEL_RESOLUTION, seed,
       this._state.duchies, this._state.regionToDuchy,
+      roadMask,
     );
 
     // Merge road mask + farm mask into structure mask so trees avoid roads and fields
@@ -906,6 +912,15 @@ export class MapScene extends Phaser.Scene {
       this._pastureAnimator = pa;
     } else {
       this._pastureAnimator = null;
+    }
+
+    // Garden worker animator (person wanders gardens in spring/summer/fall)
+    if (farmRenderer.gardens.length > 0) {
+      const gwa = new GardenWorkerAnimator(farmRenderer.gardens, PIXEL_RESOLUTION, seed, season);
+      gwa.extrusionMap = mountainRenderer.extrusionMap;
+      this._gardenWorkerAnimator = gwa;
+    } else {
+      this._gardenWorkerAnimator = null;
     }
 
     // Deer animator (deer peek through dense forests)

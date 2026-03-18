@@ -1,5 +1,5 @@
 /**
- * Agricultural improvements — grain fields, veggie fields, cow pastures.
+ * Agricultural improvements — grain fields, gardens, cow pastures.
  * One of each is assigned deterministically per duchy at game start.
  */
 
@@ -9,15 +9,15 @@ import type { Duchy } from './Duchy';
 import type { RoadSegment } from '../generators/RoadGenerator';
 import { RIVER_THRESHOLD } from '../generators/utils';
 
-export type AgImprovementType = 'grain' | 'veggie' | 'pasture';
+export type AgImprovementType = 'grain' | 'garden' | 'pasture';
 
 /**
- * Assign one grain field, one veggie field, and one pasture per duchy.
+ * Assign one grain field, one garden, and one pasture per duchy.
  * Eligible: lowland, no river, mid elevation, not capital region, not on a road.
  * Returns a Map from regionIndex → improvement type.
  */
 const TILES_PER_DUCHY = 40;
-const GRAIN_RATIO = 0.50; // 50% grain, 25% veggie, 25% pasture
+const GRAIN_RATIO = 0.50; // 50% grain, 25% garden, 25% pasture
 
 export function assignAgImprovements(
   topo: TopographyGenerator,
@@ -61,13 +61,13 @@ export function assignAgImprovements(
     const count = Math.min(TILES_PER_DUCHY, shuffled.length);
     const grainCount = Math.floor(count * GRAIN_RATIO);
     const remaining = count - grainCount;
-    const veggieCount = Math.floor(remaining / 2);
+    const gardenCount = Math.floor(remaining / 2);
 
     for (let t = 0; t < count; t++) {
       if (t < grainCount) {
         result.set(shuffled[t], 'grain');
-      } else if (t < grainCount + veggieCount) {
-        result.set(shuffled[t], 'veggie');
+      } else if (t < grainCount + gardenCount) {
+        result.set(shuffled[t], 'garden');
       } else {
         result.set(shuffled[t], 'pasture');
       }

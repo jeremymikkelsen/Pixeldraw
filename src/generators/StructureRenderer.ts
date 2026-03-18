@@ -32,7 +32,7 @@ const EDGE_MARGIN = 12;
 const RIVER_BUFFER = 8;
 const MIN_COTTAGE_SPACING = 28;
 const MAX_COTTAGE_SPACING = 50;
-const COTTAGE_DENSITY = 0.12;
+const COTTAGE_DENSITY = 0.16;
 
 const MAX_BUILDING_ELEVATION = 0.38;
 const MIN_BUILDING_ELEVATION = 0.10;
@@ -250,6 +250,7 @@ export class StructureRenderer {
     seed: number,
     duchies: Duchy[],
     regionToDuchy: Int8Array,
+    roadMask?: Uint8Array,
   ): { structures: StructureInstance[]; mask: Uint8Array } {
     const rng = mulberry32(seed ^ 0xBEEF0042);
     const res = resolution;
@@ -338,6 +339,18 @@ export class StructureRenderer {
           px >= res - EDGE_MARGIN || py >= res - EDGE_MARGIN) continue;
 
       if (riverMask[py * res + px]) continue;
+
+      // Prefer placement near roads or rivers; hard-reject far from both
+      const nearRoad = roadMask ? this._nearMask(roadMask, res, px, py, 14) : true;
+      // Re-check within a wider radius for river proximity (riverMask already excludes too-close)
+      let nearRiver = false;
+      if (!nearRoad) {
+        nearRiver = this._nearMask(riverMask, res, px, py, 16);
+      }
+
+      if (!nearRoad && !nearRiver) {
+        if (rng() > 0.06) continue;  // 94% reject if not near road or river
+      }
 
       const wx = px * scale;
       const wy = py * scale;
@@ -456,6 +469,22 @@ export class StructureRenderer {
         mask[py * N + px] = 1;
       }
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Proximity mask check — returns true if any pixel within radius r is set
+  // -----------------------------------------------------------------------
+  private _nearMask(mask: Uint8Array, N: number, cx: number, cy: number, r: number): boolean {
+    const x0 = Math.max(0, cx - r);
+    const x1 = Math.min(N - 1, cx + r);
+    const y0 = Math.max(0, cy - r);
+    const y1 = Math.min(N - 1, cy + r);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        if (mask[y * N + x]) return true;
+      }
+    }
+    return false;
   }
 
   // -----------------------------------------------------------------------

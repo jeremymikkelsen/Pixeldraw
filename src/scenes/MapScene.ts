@@ -807,11 +807,12 @@ export class MapScene extends Phaser.Scene {
     this._screenToSource = mountainRenderer.screenToSource;
 
     // Fence rendering — needs extrusionMap, so runs after MountainRenderer.
-    // Back fence (top + side rails + top posts) written into static pixels.
-    // Front fence (bottom rail + bottom posts) captured for per-frame restore above cows.
+    // Fence follows actual Voronoi cell polygon edges; shared pasture borders have no fence.
+    // Front fence (edges closer to viewer) captured for per-frame restore above cows.
     if (farmRenderer.pastures.length > 0) {
       const fc = new FenceRenderer().render(
-        pixels, farmRenderer.pastures, mountainRenderer.extrusionMap, PIXEL_RESOLUTION,
+        pixels, farmRenderer.pastures, topo, this._state.agImprovements,
+        mountainRenderer.extrusionMap, PIXEL_RESOLUTION,
       );
       this._fenceFrontPixels = fc.frontFence;
     } else {

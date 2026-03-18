@@ -1,59 +1,91 @@
 /**
- * FenceRenderer — draws 3/4-perspective post-and-rail fences around pastures.
+ * FenceRenderer — post-and-rail fence following Voronoi cell polygon edges.
  *
- * Each pasture gets:
- *   - 4 corner posts: 3 pixels tall, inset 2px from the bounding-box edges
- *   - 4 single-pixel rails connecting post midpoints (height = base − 1)
+ * For each pasture region:
+ *   - Walk the half-edge ring to enumerate Voronoi polygon edges
+ *   - Skip any edge whose neighbour is also a pasture (shared border = no fence)
+ *   - Draw a 3px-tall post at each exterior vertex
+ *   - Draw a single-pixel rail at height 1 along each exterior edge (Bresenham)
  *
- * Layer split (3/4 depth illusion):
- *   BACK  — top rail, left rail, right rail, top-left and top-right posts
- *           Written directly into the pixel buffer (static; cows walk in front).
- *   FRONT — bottom rail, bottom-left and bottom-right posts
- *           Returned as `frontFence` so the caller can restore them each frame
- *           on top of the cow layer.
- *
- * All coordinates are source-space; extrusion is applied to convert to screen-space.
+ * Layer split (3/4 depth):
+ *   BACK  — edges whose midpoint y < region centre y (farther from viewer)
+ *           Written statically; cows appear in front of them.
+ *   FRONT — edges whose midpoint y ≥ region centre y (closer to viewer)
+ *           Returned as `frontFence` for per-frame restore on top of cows.
  */
 
 import { packABGR } from './TerrainPalettes';
 import type { PastureData } from './FarmRenderer';
+import type { TopographyGenerator } from './TopographyGenerator';
+import type { AgImprovementType } from '../state/AgImprovements';
 
-const FENCE_POST = packABGR(0x4c, 0x32, 0x18);   // dark post wood
-const FENCE_RAIL = packABGR(0x6e, 0x4c, 0x26);   // lighter rail wood
+const FENCE_POST = packABGR(0x4c, 0x32, 0x18);
+const FENCE_RAIL = packABGR(0x6e, 0x4c, 0x26);
+
+function triOfEdge(e: number)  { return Math.floor(e / 3); }
+function prevEdge(e: number)   { return (e % 3 === 0) ? e + 2 : e - 1; }
 
 export class FenceRenderer {
   render(
     pixels: Uint32Array,
     pastures: PastureData[],
+    topo: TopographyGenerator,
+    improvements: Map<number, AgImprovementType>,
     ext: Int16Array | null,
     N: number,
   ): { frontFence: { idx: number; color: number }[] } {
     const frontFence: { idx: number; color: number }[] = [];
+    const scale = topo.size / N;            // world-units per pixel
+    const { mesh } = topo;
+    const { delaunay, triCenters } = mesh;
+    const halfedges = delaunay.halfedges;
+    const triangles = delaunay.triangles;
+    const numEdges  = mesh.numEdges;
 
     for (const pd of pastures) {
-      const { minX, maxX, minY, maxY } = pd;
-      if (maxX - minX < 8 || maxY - minY < 8) continue;
+      const r = pd.regionIndex;
 
-      // Corner post positions (2px inset)
-      const px0 = minX + 2, px1 = maxX - 2;
-      const py0 = minY + 2, py1 = maxY - 2;
+      // Region centre in pixel space (for front/back split)
+      const rcx = mesh.points[r].x / scale;
+      const rcy = mesh.points[r].y / scale;
 
-      // ── BACK layer (static) ──────────────────────────────────────────────
-      // Top posts
-      this._post(pixels, px0, py0, N, ext, null);
-      this._post(pixels, px1, py0, N, ext, null);
-      // Top rail
-      this._hRail(pixels, py0, px0, px1, N, ext, null);
-      // Side rails (full span, back layer only)
-      this._vRail(pixels, px0, py0, py1, N, ext, null);
-      this._vRail(pixels, px1, py0, py1, N, ext, null);
+      // Find any half-edge that starts at region r
+      let startEdge = -1;
+      for (let e = 0; e < numEdges; e++) {
+        if (triangles[e] === r) { startEdge = e; break; }
+      }
+      if (startEdge === -1) continue;
 
-      // ── FRONT layer (captured for per-frame restore over cows) ───────────
-      // Bottom posts
-      this._post(pixels, px0, py1, N, ext, frontFence);
-      this._post(pixels, px1, py1, N, ext, frontFence);
-      // Bottom rail
-      this._hRail(pixels, py1, px0, px1, N, ext, frontFence);
+      // Walk the half-edge ring around r
+      let e = startEdge;
+      do {
+        const fromTri  = triOfEdge(e);
+        const prev     = prevEdge(e);
+        const neighbor = triangles[prev];    // region across this Voronoi edge
+        const opp      = halfedges[prev];
+        if (opp === -1) { break; }          // hull — incomplete polygon, stop
+        const toTri    = triOfEdge(opp);
+
+        // Only draw fence on exterior edges (neighbour is not a pasture)
+        if (improvements.get(neighbor) !== 'pasture') {
+          const x0 = Math.round(triCenters[fromTri].x / scale);
+          const y0 = Math.round(triCenters[fromTri].y / scale);
+          const x1 = Math.round(triCenters[toTri].x  / scale);
+          const y1 = Math.round(triCenters[toTri].y  / scale);
+
+          // Clip to pixel bounds before drawing
+          if (this._inBounds(x0, y0, N) || this._inBounds(x1, y1, N)) {
+            const isFront = (y0 + y1) * 0.5 >= rcy;
+            const cap = isFront ? frontFence : null;
+
+            this._post(pixels, x0, y0, N, ext, cap);
+            this._post(pixels, x1, y1, N, ext, cap);
+            this._rail(pixels, x0, y0, x1, y1, N, ext, cap);
+          }
+        }
+
+        e = opp;
+      } while (e !== startEdge);
     }
 
     return { frontFence };
@@ -61,52 +93,56 @@ export class FenceRenderer {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  /** 3-pixel tall post at source (px, py), extending upward from terrain base. */
+  private _inBounds(px: number, py: number, N: number): boolean {
+    return px >= 0 && px < N && py >= 0 && py < N;
+  }
+
+  /** 3-pixel tall post at source position (px, py), growing upward. */
   private _post(
     pixels: Uint32Array,
     px: number, py: number,
     N: number, ext: Int16Array | null,
-    capture: { idx: number; color: number }[] | null,
+    cap: { idx: number; color: number }[] | null,
   ): void {
-    const base = this._sBase(py * N + px, py, ext);
+    const cx = Math.max(0, Math.min(N - 1, px));
+    const cy = Math.max(0, Math.min(N - 1, py));
+    const base = this._sBase(cy * N + cx, cy, ext);
     for (let h = 0; h < 3; h++) {
       const sy = base - h;
       if (sy < 0 || sy >= N) continue;
-      const si = sy * N + px;
+      const si = sy * N + cx;
       pixels[si] = FENCE_POST;
-      if (capture) capture.push({ idx: si, color: FENCE_POST });
+      if (cap) cap.push({ idx: si, color: FENCE_POST });
     }
   }
 
-  /** Single-pixel horizontal rail at height 1 above terrain base, py=const. */
-  private _hRail(
+  /** Bresenham line; rail pixel drawn at height 1 above terrain base. */
+  private _rail(
     pixels: Uint32Array,
-    py: number, px0: number, px1: number,
+    x0: number, y0: number, x1: number, y1: number,
     N: number, ext: Int16Array | null,
-    capture: { idx: number; color: number }[] | null,
+    cap: { idx: number; color: number }[] | null,
   ): void {
-    for (let px = px0; px <= px1; px++) {
-      const sy = this._sBase(py * N + px, py, ext) - 1;
-      if (sy < 0 || sy >= N) continue;
-      const si = sy * N + px;
-      pixels[si] = FENCE_RAIL;
-      if (capture) capture.push({ idx: si, color: FENCE_RAIL });
-    }
-  }
+    let cx = Math.round(x0), cy = Math.round(y0);
+    const ex = Math.round(x1), ey = Math.round(y1);
+    const dx = Math.abs(ex - cx), dy = Math.abs(ey - cy);
+    const sx = cx < ex ? 1 : -1;
+    const sy = cy < ey ? 1 : -1;
+    let err = dx - dy;
 
-  /** Single-pixel vertical rail at height 1 above terrain base, px=const. */
-  private _vRail(
-    pixels: Uint32Array,
-    px: number, py0: number, py1: number,
-    N: number, ext: Int16Array | null,
-    capture: { idx: number; color: number }[] | null,
-  ): void {
-    for (let py = py0; py <= py1; py++) {
-      const sy = this._sBase(py * N + px, py, ext) - 1;
-      if (sy < 0 || sy >= N) continue;
-      const si = sy * N + px;
-      pixels[si] = FENCE_RAIL;
-      if (capture) capture.push({ idx: si, color: FENCE_RAIL });
+    for (;;) {
+      if (cx >= 0 && cx < N && cy >= 0 && cy < N) {
+        const screenY = this._sBase(cy * N + cx, cy, ext) - 1;
+        if (screenY >= 0 && screenY < N) {
+          const si = screenY * N + cx;
+          pixels[si] = FENCE_RAIL;
+          if (cap) cap.push({ idx: si, color: FENCE_RAIL });
+        }
+      }
+      if (cx === ex && cy === ey) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; cx += sx; }
+      if (e2 <  dx) { err += dx; cy += sy; }
     }
   }
 

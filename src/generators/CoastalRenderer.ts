@@ -212,30 +212,34 @@ export class CoastalRenderer {
     }
 
     // ----------------------------------------------------------------
-    // Paint beaches: land pixels within BEACH_WIDTH of ocean
+    // Paint beaches and cobble
     // ----------------------------------------------------------------
-    const BEACH_WIDTH = 6; // pixels of sandy beach
+    // Layout from ocean inward:
+    //   ocean → water → waves (landDist 4-7) → sand (landDist 1-3, on ocean pixels)
+    //   → cobble (oceanDist 0-2, on land pixels) → grass
+    // ----------------------------------------------------------------
+    const SAND_WIDTH = 3; // pixels of sand strip on ocean side
     const COBBLE_SHADES = [0x787880, 0x888890, 0x94949c, 0xa0a0a8, 0xacacb4];
 
-    // Pass A: Paint beach sand on land pixels near ocean
+    // Pass A: Paint beach sand on OCEAN pixels near land (sand sits on water side)
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
-        if (isOcean[i]) continue;
-
+        if (!isOcean[i]) continue;
         if (riverMask && riverMask[i]) continue;
 
-        const dist = oceanDist[i];
-        if (dist > BEACH_WIDTH + 2) continue;
+        const dist = landDist[i];
+        if (dist > SAND_WIDTH) continue;
 
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
         const noiseVal = beachNoise(wx * 0.01, wy * 0.01);
-        const edgeVariation = BEACH_WIDTH + noiseVal * 2;
-        if (dist > edgeVariation) continue;
+        const sandEdge = SAND_WIDTH + noiseVal * 0.8;
+        if (dist > sandEdge) continue;
 
         const beachColors = BEACH_COLORS_BY_SEASON[season];
-        const t = dist / BEACH_WIDTH;
+        // Darker near water (dist=sandEdge), lighter near land (dist=0)
+        const t = 1.0 - dist / SAND_WIDTH;
         const colorIdx = Math.min(beachColors.length - 1,
           Math.floor(t * beachColors.length));
         const detailN = beachNoise(wx * 0.05, wy * 0.05);
@@ -247,8 +251,7 @@ export class CoastalRenderer {
       }
     }
 
-    // Pass B: Cobble rock border — 1-2px band at the water's edge
-    // (between beach sand and the ocean waves/wet sand).
+    // Pass B: Cobble rock border — 1-2px on land pixels at the water's edge
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
@@ -256,7 +259,7 @@ export class CoastalRenderer {
         if (riverMask && riverMask[i]) continue;
 
         const dist = oceanDist[i];
-        if (dist > 3) continue; // only the first few land pixels from ocean
+        if (dist > 3) continue;
 
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
@@ -268,18 +271,6 @@ export class CoastalRenderer {
             Math.floor(((cobbleN + 1) / 2) * COBBLE_SHADES.length));
           pixels[i] = applyBrightness(COBBLE_SHADES[ci], 0.85 + cobbleN * 0.1);
         }
-      }
-    }
-
-    // ----------------------------------------------------------------
-    // Fix 1px gap: paint wet sand on ocean pixels directly adjacent to land
-    // ----------------------------------------------------------------
-    // Paint wet sand on the 1-2px ocean strip adjacent to land, so any projection
-    // gap at the ocean/beach boundary shows sand rather than dark ocean.
-    const wetSand = WET_SAND_BY_SEASON[season];
-    for (let i = 0; i < N * N; i++) {
-      if (isOcean[i] && landDist[i] <= 1) {
-        pixels[i] = wetSand;
       }
     }
 
@@ -340,7 +331,8 @@ export class CoastalRenderer {
     // ----------------------------------------------------------------
     // Collect wave pixels (ocean pixels near shore)
     // ----------------------------------------------------------------
-    const WAVE_ZONE = season === Season.Winter ? 6 : 4; // wider wave zone in winter
+    const WAVE_ZONE = season === Season.Winter ? 8 : 6; // wider wave zone in winter
+    const WAVE_START = SAND_WIDTH; // waves begin just past the sand strip
 
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
@@ -350,11 +342,11 @@ export class CoastalRenderer {
         if (riverMask && riverMask[i]) continue;
 
         const dist = landDist[i];
-        if (dist > WAVE_ZONE) continue;
+        if (dist <= WAVE_START || dist > WAVE_ZONE) continue;
 
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
-        const waveIntensity = 1.0 - dist / WAVE_ZONE;
+        const waveIntensity = 1.0 - (dist - WAVE_START) / (WAVE_ZONE - WAVE_START);
 
         // Shore waves: use coastline-local noise for phase offset so
         // nearby shore pixels share the same wave cycle

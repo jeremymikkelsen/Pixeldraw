@@ -478,17 +478,18 @@ export class MapScene extends Phaser.Scene {
         if (this._roadTravelerAnimator) {
           this._roadTravelerAnimator.animate(this._pixels, time);
         }
-        // Restore fence pixels above cows
-        for (const fp of this._fencePixels) {
-          this._pixels[fp.idx] = fp.color;
-        }
         // Restore building/bridge pixels so they always render above rivers and coast
         for (const bp of this._buildingPixels) {
           this._pixels[bp.idx] = bp.color;
         }
-        // Restore duchy borders on top of everything
+        // Restore duchy borders above buildings
         for (const bp of this._duchyBorderPixels) {
           this._pixels[bp.idx] = bp.color;
+        }
+        // Restore fence pixels last — they must appear on top of duchy borders
+        // so the fence is not erased by the border each frame
+        for (const fp of this._fencePixels) {
+          this._pixels[fp.idx] = fp.color;
         }
       }
 

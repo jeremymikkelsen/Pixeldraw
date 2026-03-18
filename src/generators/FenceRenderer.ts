@@ -117,14 +117,14 @@ export class FenceRenderer {
     }
   }
 
-  /** Bresenham line; rail pixel drawn at height 1 above terrain base. */
+  /** Bresenham line; rail + intermediate posts every POST_INTERVAL steps. */
   private _rail(
     pixels: Uint32Array,
     x0: number, y0: number, x1: number, y1: number,
     N: number, ext: Int16Array | null,
     cap: { idx: number; color: number }[],
     regionGrid: Uint16Array | null,
-    r1: number, _r2: number,
+    r1: number, r2: number,
   ): void {
     let cx = Math.round(x0), cy = Math.round(y0);
     const ex = Math.round(x1), ey = Math.round(y1);
@@ -132,17 +132,34 @@ export class FenceRenderer {
     const sx = cx < ex ? 1 : -1;
     const sy = cy < ey ? 1 : -1;
     let err = dx - dy;
+    let step = 0;
+    const POST_INTERVAL = 8;  // intermediate post every 8 Bresenham steps
 
     for (;;) {
       if (cx >= 0 && cx < N && cy >= 0 && cy < N) {
-        // Clip to pasture region only — never draw into neighbouring terrain
+        // Allow drawing on either the pasture or its direct neighbour (the fence
+        // lies on the boundary so both sides are valid).
         const srcIdx = cy * N + cx;
-        if (!regionGrid || regionGrid[srcIdx] === r1) {
-          const screenY = this._sBase(srcIdx, cy, ext) - 1;
-          if (screenY >= 0 && screenY < N) {
-            const si = screenY * N + cx;
-            cap.push({ idx: si, color: FENCE_RAIL });
-            pixels[si] = FENCE_RAIL;
+        const inRegion = !regionGrid || regionGrid[srcIdx] === r1 || regionGrid[srcIdx] === r2;
+        if (inRegion) {
+          const base = this._sBase(srcIdx, cy, ext);
+          if (step > 0 && step % POST_INTERVAL === 0) {
+            // Intermediate post — 3px tall, sitting on rail height
+            for (let h = 0; h < 3; h++) {
+              const psy = base - h;
+              if (psy >= 0 && psy < N) {
+                const pi = psy * N + cx;
+                cap.push({ idx: pi, color: FENCE_POST });
+                pixels[pi] = FENCE_POST;
+              }
+            }
+          } else {
+            const screenY = base - 1;
+            if (screenY >= 0 && screenY < N) {
+              const si = screenY * N + cx;
+              cap.push({ idx: si, color: FENCE_RAIL });
+              pixels[si] = FENCE_RAIL;
+            }
           }
         }
       }
@@ -150,6 +167,7 @@ export class FenceRenderer {
       const e2 = 2 * err;
       if (e2 > -dy) { err -= dy; cx += sx; }
       if (e2 <  dx) { err += dx; cy += sy; }
+      step++;
     }
   }
 

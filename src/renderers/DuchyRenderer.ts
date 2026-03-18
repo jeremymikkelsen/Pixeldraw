@@ -155,7 +155,13 @@ export function renderDuchyBordersOnTop(
         const dr = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyR[duchyIdx] * BORDER_BRIGHTEN)));
         const dg = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyG[duchyIdx] * BORDER_BRIGHTEN)));
         const db = Math.min(255, Math.max(BORDER_MIN, Math.floor(duchyB[duchyIdx] * BORDER_BRIGHTEN)));
-        pixels[outIdx] = (255 << 24) | (db << 16) | (dg << 8) | dr;
+        // 50% transparent — blend border color with whatever is already rendered there
+        const ex = pixels[outIdx];
+        const er = ex & 0xFF, eg = (ex >> 8) & 0xFF, eb = (ex >> 16) & 0xFF;
+        pixels[outIdx] = (255 << 24)
+          | (((eb + db) >> 1) << 16)
+          | (((eg + dg) >> 1) << 8)
+          | ((er + dr) >> 1);
       }
     }
   }

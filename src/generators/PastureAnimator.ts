@@ -129,8 +129,8 @@ export class PastureAnimator {
           phaseY: rng() * Math.PI * 2,
           freqX: 0.00045 + rng() * 0.00020,
           freqY: 0.00038 + rng() * 0.00018,
-          radiusX: Math.min(safeW * 0.2, 6),
-          radiusY: Math.min(safeH * 0.15, 4),
+          radiusX: Math.min(safeW * 0.35, 18),
+          radiusY: Math.min(safeH * 0.30, 14),
           mirrorBase: rng() > 0.5,
         });
       }

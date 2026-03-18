@@ -7,11 +7,12 @@
  *   - Draw a 3px-tall post at each exterior vertex
  *   - Draw a single-pixel rail at height 1 along each exterior edge (Bresenham)
  *
- * Layer split (3/4 depth):
- *   BACK  — edges whose midpoint y < region centre y (farther from viewer)
- *           Written statically; cows appear in front of them.
- *   FRONT — edges whose midpoint y ≥ region centre y (closer to viewer)
- *           Returned as `frontFence` for per-frame restore on top of cows.
+ * Fence pixels are clipped to source-space pixels that belong to the pasture
+ * region or its immediate neighbour region, preventing lines from straying
+ * outside the actual rendered tile boundary.
+ *
+ * All fence pixels are returned in `fencePixels` for per-frame restoration
+ * after cow animation, so cows never permanently erase fence segments.
  */
 
 import { packABGR } from './TerrainPalettes';
@@ -33,9 +34,10 @@ export class FenceRenderer {
     improvements: Map<number, AgImprovementType>,
     ext: Int16Array | null,
     N: number,
-  ): { frontFence: { idx: number; color: number }[] } {
-    const frontFence: { idx: number; color: number }[] = [];
-    const scale = topo.size / N;            // world-units per pixel
+    regionGrid: Uint16Array | null,
+  ): { fencePixels: { idx: number; color: number }[] } {
+    const fencePixels: { idx: number; color: number }[] = [];
+    const scale = topo.size / N;
     const { mesh } = topo;
     const { delaunay, triCenters } = mesh;
     const halfedges = delaunay.halfedges;
@@ -45,9 +47,10 @@ export class FenceRenderer {
     for (const pd of pastures) {
       const r = pd.regionIndex;
 
-      // Region centre in pixel space (for front/back split)
+      // Region centre in pixel space (for front/back split — unused now, kept for future)
       const rcx = mesh.points[r].x / scale;
       const rcy = mesh.points[r].y / scale;
+      void rcx; void rcy;
 
       // Find any half-edge that starts at region r
       let startEdge = -1;
@@ -73,14 +76,10 @@ export class FenceRenderer {
           const x1 = Math.round(triCenters[toTri].x  / scale);
           const y1 = Math.round(triCenters[toTri].y  / scale);
 
-          // Clip to pixel bounds before drawing
           if (this._inBounds(x0, y0, N) || this._inBounds(x1, y1, N)) {
-            const isFront = (y0 + y1) * 0.5 >= rcy;
-            const cap = isFront ? frontFence : null;
-
-            this._post(pixels, x0, y0, N, ext, cap);
-            this._post(pixels, x1, y1, N, ext, cap);
-            this._rail(pixels, x0, y0, x1, y1, N, ext, cap);
+            this._post(pixels, x0, y0, N, ext, fencePixels, regionGrid, r, neighbor);
+            this._post(pixels, x1, y1, N, ext, fencePixels, regionGrid, r, neighbor);
+            this._rail(pixels, x0, y0, x1, y1, N, ext, fencePixels, regionGrid, r, neighbor);
           }
         }
 
@@ -88,7 +87,7 @@ export class FenceRenderer {
       } while (e !== startEdge);
     }
 
-    return { frontFence };
+    return { fencePixels };
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -102,17 +101,26 @@ export class FenceRenderer {
     pixels: Uint32Array,
     px: number, py: number,
     N: number, ext: Int16Array | null,
-    cap: { idx: number; color: number }[] | null,
+    cap: { idx: number; color: number }[],
+    regionGrid: Uint16Array | null,
+    r1: number, r2: number,
   ): void {
     const cx = Math.max(0, Math.min(N - 1, px));
     const cy = Math.max(0, Math.min(N - 1, py));
+
+    // Clip: only draw if this source pixel belongs to one of the two bordering regions
+    if (regionGrid) {
+      const srcR = regionGrid[cy * N + cx];
+      if (srcR !== r1 && srcR !== r2) return;
+    }
+
     const base = this._sBase(cy * N + cx, cy, ext);
     for (let h = 0; h < 3; h++) {
       const sy = base - h;
       if (sy < 0 || sy >= N) continue;
       const si = sy * N + cx;
+      cap.push({ idx: si, color: FENCE_POST });
       pixels[si] = FENCE_POST;
-      if (cap) cap.push({ idx: si, color: FENCE_POST });
     }
   }
 
@@ -121,7 +129,9 @@ export class FenceRenderer {
     pixels: Uint32Array,
     x0: number, y0: number, x1: number, y1: number,
     N: number, ext: Int16Array | null,
-    cap: { idx: number; color: number }[] | null,
+    cap: { idx: number; color: number }[],
+    regionGrid: Uint16Array | null,
+    r1: number, r2: number,
   ): void {
     let cx = Math.round(x0), cy = Math.round(y0);
     const ex = Math.round(x1), ey = Math.round(y1);
@@ -132,11 +142,16 @@ export class FenceRenderer {
 
     for (;;) {
       if (cx >= 0 && cx < N && cy >= 0 && cy < N) {
-        const screenY = this._sBase(cy * N + cx, cy, ext) - 1;
-        if (screenY >= 0 && screenY < N) {
-          const si = screenY * N + cx;
-          pixels[si] = FENCE_RAIL;
-          if (cap) cap.push({ idx: si, color: FENCE_RAIL });
+        // Clip to one of the two bordering regions
+        const srcIdx = cy * N + cx;
+        const okRegion = !regionGrid || regionGrid[srcIdx] === r1 || regionGrid[srcIdx] === r2;
+        if (okRegion) {
+          const screenY = this._sBase(srcIdx, cy, ext) - 1;
+          if (screenY >= 0 && screenY < N) {
+            const si = screenY * N + cx;
+            cap.push({ idx: si, color: FENCE_RAIL });
+            pixels[si] = FENCE_RAIL;
+          }
         }
       }
       if (cx === ex && cy === ey) break;

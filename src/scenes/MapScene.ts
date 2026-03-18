@@ -63,7 +63,7 @@ export class MapScene extends Phaser.Scene {
   private _deerAnimator: DeerAnimator | null = null;
   private _roadTravelerAnimator: RoadTravelerAnimator | null = null;
   private _duchyBorderPixels: { idx: number; color: number }[] = [];
-  private _fenceFrontPixels: { idx: number; color: number }[] = [];
+  private _fencePixels: { idx: number; color: number }[] = [];
 
   // Region hover highlight
   private _regionGrid!: Uint16Array | null;
@@ -476,8 +476,8 @@ export class MapScene extends Phaser.Scene {
         if (this._roadTravelerAnimator) {
           this._roadTravelerAnimator.animate(this._pixels, time);
         }
-        // Restore front fence above cows (bottom fence in 3/4 view)
-        for (const fp of this._fenceFrontPixels) {
+        // Restore fence pixels above cows
+        for (const fp of this._fencePixels) {
           this._pixels[fp.idx] = fp.color;
         }
         // Restore building/bridge pixels so they always render above rivers and coast
@@ -806,17 +806,17 @@ export class MapScene extends Phaser.Scene {
     this._extrusionMap = mountainRenderer.extrusionMap;
     this._screenToSource = mountainRenderer.screenToSource;
 
-    // Fence rendering — needs extrusionMap, so runs after MountainRenderer.
+    // Fence rendering — needs extrusionMap and regionGrid, so runs after MountainRenderer.
     // Fence follows actual Voronoi cell polygon edges; shared pasture borders have no fence.
-    // Front fence (edges closer to viewer) captured for per-frame restore above cows.
+    // All fence pixels are captured for per-frame restoration after cow animation.
     if (farmRenderer.pastures.length > 0) {
       const fc = new FenceRenderer().render(
         pixels, farmRenderer.pastures, topo, this._state.agImprovements,
-        mountainRenderer.extrusionMap, PIXEL_RESOLUTION,
+        mountainRenderer.extrusionMap, PIXEL_RESOLUTION, renderer.regionGrid,
       );
-      this._fenceFrontPixels = fc.frontFence;
+      this._fencePixels = fc.fencePixels;
     } else {
-      this._fenceFrontPixels = [];
+      this._fencePixels = [];
     }
 
     // River animator (buildingMask set after renderSprites below)

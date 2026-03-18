@@ -121,7 +121,6 @@ export class CoastalRenderer {
     // ----------------------------------------------------------------
     // We need to know which pixels are ocean and which are land
     const isOcean = new Uint8Array(N * N);
-    const isCoast = new Uint8Array(N * N);
     const elevation = new Float32Array(N * N);
 
     for (let py = 0; py < N; py++) {
@@ -150,9 +149,6 @@ export class CoastalRenderer {
         const terrain = topo.terrainType[bestR];
         if (terrain === 'ocean' || terrain === 'water') {
           isOcean[i] = 1;
-        }
-        if (terrain === 'coast') {
-          isCoast[i] = 1;
         }
         elevation[i] = topo.elevation[bestR];
       }
@@ -221,12 +217,11 @@ export class CoastalRenderer {
     const BEACH_WIDTH = 6; // pixels of sandy beach
     const COBBLE_SHADES = [0x787880, 0x888890, 0x94949c, 0xa0a0a8, 0xacacb4];
 
-    // Pass A: Paint beach sand on coast-terrain pixels near ocean
+    // Pass A: Paint beach sand on land pixels near ocean
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
         if (isOcean[i]) continue;
-        if (!isCoast[i]) continue; // only paint sand on coast terrain
 
         if (riverMask && riverMask[i]) continue;
 
@@ -252,9 +247,8 @@ export class CoastalRenderer {
       }
     }
 
-    // Pass B: Cobble rock border — 1-2px band on ANY land pixel at the
-    // inland edge of the beach (where coast meets lowland/highland).
-    // This runs on all terrain types so it appears at the grass/sand boundary.
+    // Pass B: Cobble rock border — 1-2px band at the water's edge
+    // (between beach sand and the ocean waves/wet sand).
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
@@ -262,16 +256,13 @@ export class CoastalRenderer {
         if (riverMask && riverMask[i]) continue;
 
         const dist = oceanDist[i];
-        if (dist > BEACH_WIDTH + 4 || dist < 2) continue; // broad filter
+        if (dist > 3) continue; // only the first few land pixels from ocean
 
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
-        const noiseVal = beachNoise(wx * 0.01, wy * 0.01);
-        const edgeVariation = BEACH_WIDTH + noiseVal * 2;
         const cobbleWidth = 1.0 + (beachNoise(wx * 0.03, wy * 0.03) + 1) * 0.5; // 1-2px
 
-        // Cobble sits right at the beach edge, straddling the sand/grass boundary
-        if (dist >= edgeVariation - 0.5 && dist <= edgeVariation + cobbleWidth) {
+        if (dist <= cobbleWidth) {
           const cobbleN = beachNoise(wx * 0.15, wy * 0.15);
           const ci = Math.min(COBBLE_SHADES.length - 1,
             Math.floor(((cobbleN + 1) / 2) * COBBLE_SHADES.length));
@@ -287,16 +278,9 @@ export class CoastalRenderer {
     // gap at the ocean/beach boundary shows sand rather than dark ocean.
     const wetSand = WET_SAND_BY_SEASON[season];
     for (let i = 0; i < N * N; i++) {
-      if (!isOcean[i] || landDist[i] > 1) continue;
-      // Only paint wet sand next to coast terrain, not lowland/highland
-      const px2 = i % N;
-      const py2 = (i - px2) / N;
-      let adjCoast = false;
-      if (px2 > 0     && isCoast[i - 1]) adjCoast = true;
-      if (px2 < N - 1 && isCoast[i + 1]) adjCoast = true;
-      if (py2 > 0     && isCoast[i - N]) adjCoast = true;
-      if (py2 < N - 1 && isCoast[i + N]) adjCoast = true;
-      if (adjCoast) pixels[i] = wetSand;
+      if (isOcean[i] && landDist[i] <= 1) {
+        pixels[i] = wetSand;
+      }
     }
 
     // ----------------------------------------------------------------

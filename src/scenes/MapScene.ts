@@ -21,6 +21,8 @@ import { FenceRenderer } from '../generators/FenceRenderer';
 import { GardenWorkerAnimator } from '../generators/GardenWorkerAnimator';
 import { WoodcutterRenderer } from '../generators/WoodcutterRenderer';
 import { WoodcutterAnimator } from '../generators/WoodcutterAnimator';
+import { FishingCampRenderer } from '../generators/FishingCampRenderer';
+import { FishingCampAnimator } from '../generators/FishingCampAnimator';
 import { packABGR } from '../generators/TerrainPalettes';
 
 const MAP_SIZE = 3072;
@@ -68,6 +70,7 @@ export class MapScene extends Phaser.Scene {
   private _roadTravelerAnimator: RoadTravelerAnimator | null = null;
   private _gardenWorkerAnimator: GardenWorkerAnimator | null = null;
   private _woodcutterAnimator: WoodcutterAnimator | null = null;
+  private _fishingCampAnimator: FishingCampAnimator | null = null;
   private _duchyBorderPixels: { idx: number; color: number }[] = [];
   private _fencePixels: { idx: number; color: number }[] = [];
 
@@ -497,6 +500,10 @@ export class MapScene extends Phaser.Scene {
         for (const bp of this._buildingPixels) {
           this._pixels[bp.idx] = bp.color;
         }
+        // Fishing camp animator runs AFTER building restoration so boat appears over dock
+        if (this._fishingCampAnimator) {
+          this._fishingCampAnimator.animate(this._pixels, time);
+        }
         // Restore duchy borders above buildings
         for (const bp of this._duchyBorderPixels) {
           this._pixels[bp.idx] = bp.color;
@@ -848,6 +855,16 @@ export class MapScene extends Phaser.Scene {
       this._state.removedTrees, riverMask, seed,
     );
 
+    // Fishing camps — dock/wharf, hut, racks, static fishermen (before trees so clearing works)
+    const fishingRenderer = new FishingCampRenderer();
+    const { campMask, renderData: fishRenderData } = fishingRenderer.render(
+      pixels, PIXEL_RESOLUTION, this._state.fishingCamps, season, riverMask,
+    );
+    // Merge camp mask into structureMask so trees avoid the camp area
+    for (let i = 0; i < campMask.length; i++) {
+      if (campMask[i]) structureMask[i] = 1;
+    }
+
     // Mountain extrusion with seasonal snow line
     const mountainRenderer = new MountainRenderer();
     mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, treeMask, season, roadMask);
@@ -880,6 +897,10 @@ export class MapScene extends Phaser.Scene {
     // Merge woodcutter mask into building mask so rivers don't overdraw woodcutter pixels
     for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
       if (woodcutterMask[bi]) buildingMask[bi] = 1;
+    }
+    // Merge fishing camp mask so static dock/hut pixels persist over river animation
+    for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
+      if (campMask[bi]) buildingMask[bi] = 1;
     }
 
     // Capture building pixel colors NOW (before river animation overwrites them)
@@ -1005,6 +1026,15 @@ export class MapScene extends Phaser.Scene {
       this._woodcutterAnimator = wca;
     } else {
       this._woodcutterAnimator = null;
+    }
+
+    // Fishing camp animator (chimney smoke + ocean boat)
+    if (fishRenderData.length > 0) {
+      const fca = new FishingCampAnimator(fishRenderData, PIXEL_RESOLUTION);
+      fca.extrusionMap = mountainRenderer.extrusionMap;
+      this._fishingCampAnimator = fca;
+    } else {
+      this._fishingCampAnimator = null;
     }
 
     // Store refs

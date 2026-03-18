@@ -13,8 +13,9 @@ import { DuchyEconomy, createDuchyEconomy, processEconomyTurn, countTerrain } fr
 import type { SaveData } from './SaveLoad';
 import { AgImprovementType, assignAgImprovements } from './AgImprovements';
 import { KingData, selectKing } from './King';
-import type { WoodcutterState } from './Building';
+import type { WoodcutterState, FishingCampState } from './Building';
 import { assignWoodcutters } from './WoodcutterAssignment';
+import { assignFishingCamps } from './FishingCampAssignment';
 
 export interface GameState {
   seed: number;
@@ -44,6 +45,8 @@ export interface GameState {
 
   // Woodcutters — one per duchy (duchyIndex → state)
   woodcutters: Map<number, WoodcutterState>;
+  // Fishing camps — one per duchy (duchyIndex → state)
+  fishingCamps: Map<number, FishingCampState>;
   // Tree trunk positions permanently removed by woodcutters (pixel indices: y * N + x)
   removedTrees: Set<number>;
 }
@@ -63,6 +66,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
   const agImprovements = assignAgImprovements(topo, hydro, duchies, seed, roads);
   const king = selectKing(seed);
   const woodcutters = assignWoodcutters(topo, hydro, duchies, seed, PIXEL_RESOLUTION, roads, agImprovements);
+  const fishingCamps = assignFishingCamps(topo, hydro, duchies, seed, PIXEL_RESOLUTION);
 
   // Initialize economies for each duchy
   const economies = duchies.map(() => createDuchyEconomy(50));
@@ -83,6 +87,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
     agImprovements,
     economies,
     woodcutters,
+    fishingCamps,
     removedTrees: new Set(),
   };
 }
@@ -99,6 +104,7 @@ export function loadGameState(save: SaveData): GameState {
   const agImprovements = assignAgImprovements(topo, hydro, duchies, save.seed, roads);
   const king = selectKing(save.seed);
   const woodcutters = assignWoodcutters(topo, hydro, duchies, save.seed, PIXEL_RESOLUTION, roads, agImprovements);
+  const fishingCamps = assignFishingCamps(topo, hydro, duchies, save.seed, PIXEL_RESOLUTION);
 
   // Restore mutable woodcutter state from save
   if (save.woodcutterLumber) {
@@ -124,6 +130,7 @@ export function loadGameState(save: SaveData): GameState {
     agImprovements,
     economies: save.economies,
     woodcutters,
+    fishingCamps,
     removedTrees: new Set(save.removedTrees ?? []),
   };
 }

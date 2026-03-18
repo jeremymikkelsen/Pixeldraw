@@ -1,0 +1,108 @@
+/**
+ * FishingCampAssignment — deterministically places one fishing camp per duchy.
+ *
+ * Ocean variant: coast region adjacent to ocean/water → pier extending into sea.
+ * River variant: region on/adjacent to a big river → wharf along the bank.
+ *
+ * If a duchy has both, ocean is preferred.
+ */
+
+import { TopographyGenerator, mulberry32 } from '../generators/TopographyGenerator';
+import { HydrologyGenerator } from '../generators/HydrologyGenerator';
+import type { Duchy } from './Duchy';
+import type { FishingCampState } from './Building';
+import { RIVER_THRESHOLD } from '../generators/utils';
+import { buildAdjacencyList } from '../utils/adjacency';
+
+export function assignFishingCamps(
+  topo: TopographyGenerator,
+  hydro: HydrologyGenerator,
+  duchies: Duchy[],
+  seed: number,
+  pixelResolution: number,
+): Map<number, FishingCampState> {
+  const result = new Map<number, FishingCampState>();
+  const adj = buildAdjacencyList(topo.mesh);
+  const scale = topo.size / pixelResolution;
+
+  for (let di = 0; di < duchies.length; di++) {
+    const duchy = duchies[di];
+    const rng = mulberry32(seed ^ (duchy.id * 0x5e3f9c + 0x0000f001));
+
+    // Ocean candidates: coast regions that directly border ocean or water
+    const oceanCandidates = duchy.regions.filter(r => {
+      if (r === duchy.capitalRegion) return false;
+      if (topo.terrainType[r] !== 'coast') return false;
+      if (!adj[r]) return false;
+      return adj[r].some(n => {
+        const t = topo.terrainType[n];
+        return t === 'ocean' || t === 'water';
+      });
+    });
+
+    // River candidates: land regions on or directly adjacent to a big river
+    const riverCandidates = duchy.regions.filter(r => {
+      if (r === duchy.capitalRegion) return false;
+      const terrain = topo.terrainType[r];
+      if (terrain !== 'coast' && terrain !== 'lowland' && terrain !== 'highland') return false;
+      if (hydro.flowAccumulation[r] >= RIVER_THRESHOLD) return true;
+      if (!adj[r]) return false;
+      return adj[r].some(n => hydro.flowAccumulation[n] >= RIVER_THRESHOLD);
+    });
+
+    let variant: 'ocean' | 'river';
+    let region: number;
+
+    if (oceanCandidates.length > 0) {
+      region = oceanCandidates[Math.floor(rng() * oceanCandidates.length)];
+      variant = 'ocean';
+    } else if (riverCandidates.length > 0) {
+      region = riverCandidates[Math.floor(rng() * riverCandidates.length)];
+      variant = 'river';
+    } else {
+      continue; // duchy has no suitable coast or river
+    }
+
+    const pt = topo.mesh.points[region];
+    const hutPx = Math.floor(pt.x / scale);
+    const hutPy = Math.floor(pt.y / scale);
+
+    // Compute direction toward the nearest water by averaging offsets to water neighbors
+    let wx = 0, wy = 0;
+    if (adj[region]) {
+      for (const n of adj[region]) {
+        const nt = topo.terrainType[n];
+        const isTarget = variant === 'ocean'
+          ? (nt === 'ocean' || nt === 'water')
+          : hydro.flowAccumulation[n] >= RIVER_THRESHOLD;
+        if (isTarget) {
+          const npt = topo.mesh.points[n];
+          wx += npt.x - pt.x;
+          wy += npt.y - pt.y;
+        }
+      }
+    }
+    const wlen = Math.sqrt(wx * wx + wy * wy);
+    const waterDirX = wlen > 0 ? wx / wlen : 0;
+    const waterDirY = wlen > 0 ? wy / wlen : 1;
+
+    // Dock end: extend from hut toward water
+    const dockLength = variant === 'ocean' ? 16 : 12;
+    const dockPx = Math.round(hutPx + waterDirX * dockLength);
+    const dockPy = Math.round(hutPy + waterDirY * dockLength);
+
+    result.set(di, {
+      regionIndex: region,
+      duchyIndex: di,
+      variant,
+      hutPx,
+      hutPy,
+      dockPx,
+      dockPy,
+      waterDirX,
+      waterDirY,
+    });
+  }
+
+  return result;
+}

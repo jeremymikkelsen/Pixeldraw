@@ -47,11 +47,6 @@ export class FenceRenderer {
     for (const pd of pastures) {
       const r = pd.regionIndex;
 
-      // Region centre in pixel space (for front/back split — unused now, kept for future)
-      const rcx = mesh.points[r].x / scale;
-      const rcy = mesh.points[r].y / scale;
-      void rcx; void rcy;
-
       // Find any half-edge that starts at region r
       let startEdge = -1;
       for (let e = 0; e < numEdges; e++) {
@@ -103,16 +98,14 @@ export class FenceRenderer {
     N: number, ext: Int16Array | null,
     cap: { idx: number; color: number }[],
     regionGrid: Uint16Array | null,
-    r1: number, r2: number,
+    r1: number, _r2: number,
   ): void {
     const cx = Math.max(0, Math.min(N - 1, px));
     const cy = Math.max(0, Math.min(N - 1, py));
 
-    // Clip: only draw if this source pixel belongs to one of the two bordering regions
-    if (regionGrid) {
-      const srcR = regionGrid[cy * N + cx];
-      if (srcR !== r1 && srcR !== r2) return;
-    }
+    // Clip: only draw on pixels that belong to the pasture region itself,
+    // so fence never bleeds into neighbouring terrain.
+    if (regionGrid && regionGrid[cy * N + cx] !== r1) return;
 
     const base = this._sBase(cy * N + cx, cy, ext);
     for (let h = 0; h < 3; h++) {
@@ -131,7 +124,7 @@ export class FenceRenderer {
     N: number, ext: Int16Array | null,
     cap: { idx: number; color: number }[],
     regionGrid: Uint16Array | null,
-    r1: number, r2: number,
+    r1: number, _r2: number,
   ): void {
     let cx = Math.round(x0), cy = Math.round(y0);
     const ex = Math.round(x1), ey = Math.round(y1);
@@ -142,10 +135,9 @@ export class FenceRenderer {
 
     for (;;) {
       if (cx >= 0 && cx < N && cy >= 0 && cy < N) {
-        // Clip to one of the two bordering regions
+        // Clip to pasture region only — never draw into neighbouring terrain
         const srcIdx = cy * N + cx;
-        const okRegion = !regionGrid || regionGrid[srcIdx] === r1 || regionGrid[srcIdx] === r2;
-        if (okRegion) {
+        if (!regionGrid || regionGrid[srcIdx] === r1) {
           const screenY = this._sBase(srcIdx, cy, ext) - 1;
           if (screenY >= 0 && screenY < N) {
             const si = screenY * N + cx;

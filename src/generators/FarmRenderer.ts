@@ -219,7 +219,7 @@ export class FarmRenderer {
           break;
         }
         case 'pasture': {
-          const color = this._pasturePixel(px, py, season, noise, pixels[i]);
+          const color = this._pasturePixel(px, py, season, noise);
           pixels[i] = color;
           pastureMap.get(r)!.interiorPixels.push({ idx: i, color });
           break;
@@ -291,22 +291,10 @@ export class FarmRenderer {
     px: number, py: number,
     season: Season,
     noise: (x: number, y: number) => number,
-    terrainPx: number,
   ): number {
     const n = (noise(px * 0.18, py * 0.18) + 1) / 2;
     const base = n > 0.5 ? PASTURE_B[season] : PASTURE_A[season];
-
-    // Scale pasture color to match terrain slope shading so pastures don't
-    // appear uniformly bright against shaded surroundings.
-    const tr = terrainPx & 0xFF;
-    const tg = (terrainPx >> 8) & 0xFF;
-    const tb = (terrainPx >> 16) & 0xFF;
-    // Rec.601 luminance (integer arithmetic)
-    const lum = (tr * 77 + tg * 150 + tb * 29) >> 8;
-    // Expected neutral lowland lum for flat mid-lit terrain (~middle lowland shade)
-    const neutralLum = 95;
-    const scale = Math.max(0.5, Math.min(1.3, lum / neutralLum));
-    return applyBrightness(base, scale);
+    return applyBrightness(base, 1.0);
   }
 
 }

@@ -37,8 +37,8 @@ const COW_LEFT: number[][] = [
   [_, 0, _, 1],
 ];
 
-// Inset from pasture bounding box to keep cows fully inside
-const EDGE_INSET = COW_W + 2;
+// Inset from pasture bounding box — just enough to keep the sprite from clipping
+const EDGE_INSET = 2;
 
 // ── Cow instance ──────────────────────────────────────────────────────────────
 interface CowState {

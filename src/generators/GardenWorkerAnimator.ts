@@ -3,6 +3,7 @@
  *
  * Uses stateless sine-based wander (same approach as PastureAnimator cows).
  * The gardener uses the same 2×3 walking person sprite as RoadTravelerAnimator.
+ * Body color matches the duchy team color (set via GardenData.bodyColor).
  * Active in spring, summer, and fall only.
  */
 
@@ -13,14 +14,13 @@ import { Season } from '../state/Season';
 
 // ── Person sprite (same as RoadTravelerAnimator) ──────────────────────────────
 const PERSON_HEAD = packABGR(0xc8, 0xa8, 0x80);
-const PERSON_BODY = packABGR(0x4a, 0x5a, 0x78);
 const PERSON_LEG  = packABGR(0x5a, 0x48, 0x38);
 
 const _ = -1;
 
 const PERSON_RIGHT = { w: 2, h: 3, cells: [[0, _], [1, 1], [_, 2]] };
 const PERSON_LEFT  = { w: 2, h: 3, cells: [[_, 0], [1, 1], [2, _]] };
-const PERSON_COLORS = [PERSON_HEAD, PERSON_BODY, PERSON_LEG];
+// cell 0 = head, 1 = body (duchy color), 2 = legs
 
 const EDGE_INSET = 3;
 
@@ -35,6 +35,7 @@ interface WorkerState {
   radiusY: number;
   mirrorBase: boolean;
   minX: number; maxX: number; minY: number; maxY: number;
+  bodyColor: number;  // duchy team color (ABGR)
 }
 
 export class GardenWorkerAnimator {
@@ -92,6 +93,7 @@ export class GardenWorkerAnimator {
           mirrorBase: rng() > 0.5,
           minX: safeMinX, maxX: safeMaxX,
           minY: safeMinY, maxY: safeMaxY,
+          bodyColor: gd.bodyColor,
         });
       }
     }
@@ -122,6 +124,7 @@ export class GardenWorkerAnimator {
       const vx = Math.cos(timeMs * w.freqX + w.phaseX);
       const facingRight = w.mirrorBase ? vx > 0 : vx <= 0;
       const sprite = facingRight ? PERSON_RIGHT : PERSON_LEFT;
+      const colors = [PERSON_HEAD, w.bodyColor, PERSON_LEG];
 
       for (let row = 0; row < sprite.h; row++) {
         for (let col = 0; col < sprite.w; col++) {
@@ -140,7 +143,7 @@ export class GardenWorkerAnimator {
             this._dirty.push({ screenIdx, color: pixels[screenIdx] });
             this._savedThisFrame.add(screenIdx);
           }
-          pixels[screenIdx] = PERSON_COLORS[cell];
+          pixels[screenIdx] = colors[cell];
         }
       }
     }

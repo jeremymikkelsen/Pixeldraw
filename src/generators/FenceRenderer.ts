@@ -137,10 +137,10 @@ export class FenceRenderer {
 
     for (;;) {
       if (cx >= 0 && cx < N && cy >= 0 && cy < N) {
-        // Allow drawing on either the pasture or its direct neighbour (the fence
-        // lies on the boundary so both sides are valid).
+        // Only draw on pixels that belong to the pasture region itself —
+        // drawing on the neighbour causes fence to bleed into adjacent cells.
         const srcIdx = cy * N + cx;
-        const inRegion = !regionGrid || regionGrid[srcIdx] === r1 || regionGrid[srcIdx] === r2;
+        const inRegion = !regionGrid || regionGrid[srcIdx] === r1;
         if (inRegion) {
           const base = this._sBase(srcIdx, cy, ext);
           if (step > 0 && step % POST_INTERVAL === 0) {

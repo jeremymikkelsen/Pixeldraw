@@ -86,6 +86,8 @@ export interface PastureData {
 export interface GardenData {
   regionIndex: number;
   minX: number; maxX: number; minY: number; maxY: number;
+  /** ABGR body color for garden workers — set to duchy team color in MapScene */
+  bodyColor: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,6 +227,7 @@ export class FarmRenderer {
         this.gardens.push({
           regionIndex: r,
           minX: m.minX, maxX: m.maxX, minY: m.minY, maxY: m.maxY,
+          bodyColor: packABGR(0x4a, 0x5a, 0x78),  // overridden in MapScene with duchy color
         });
       }
     }

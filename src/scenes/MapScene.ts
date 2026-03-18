@@ -19,6 +19,7 @@ import { DeerAnimator } from '../generators/DeerAnimator';
 import { RoadTravelerAnimator } from '../generators/RoadTravelerAnimator';
 import { FenceRenderer } from '../generators/FenceRenderer';
 import { GardenWorkerAnimator } from '../generators/GardenWorkerAnimator';
+import { packABGR } from '../generators/TerrainPalettes';
 
 const MAP_SIZE = 3072;
 const PIXEL_RESOLUTION = 1536;
@@ -915,6 +916,14 @@ export class MapScene extends Phaser.Scene {
     }
 
     // Garden worker animator (person wanders gardens in spring/summer/fall)
+    // Assign duchy team color as body color for each garden worker
+    for (const gd of farmRenderer.gardens) {
+      const duchyIdx = this._state.regionToDuchy[gd.regionIndex];
+      if (duchyIdx >= 0) {
+        const c = this._state.duchies[duchyIdx].house.color;
+        gd.bodyColor = packABGR((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff);
+      }
+    }
     if (farmRenderer.gardens.length > 0) {
       const gwa = new GardenWorkerAnimator(farmRenderer.gardens, PIXEL_RESOLUTION, seed, season);
       gwa.extrusionMap = mountainRenderer.extrusionMap;

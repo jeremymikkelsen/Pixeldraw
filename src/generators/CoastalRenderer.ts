@@ -436,8 +436,20 @@ export class CoastalRenderer {
             // Shore side of wave: wet sand exposed
             pixels[outIdx] = WET_SAND_BY_SEASON[this._season];
           } else {
-            // Ocean side of wave: show water, never sand
-            pixels[outIdx] = colors.sparkleDim;
+            // Ocean side of wave: show original water color (pre-sand, with lighting)
+            // Use a dim water tone that roughly matches nearby ocean shading
+            const base = this._baseColors.get(cp.idx)!;
+            // Blend toward water blue — base was painted as sand, shift it to water
+            const r = base & 0xff;
+            const g = (base >> 8) & 0xff;
+            const b = (base >> 16) & 0xff;
+            // Weighted blend: 80% water target, 20% luminance from base for shading
+            const lum = (r * 77 + g * 150 + b * 29) >> 8;
+            const shade = lum / 180; // normalize
+            const wr = Math.floor(0x2a * shade);
+            const wg = Math.floor(0x5c * shade);
+            const wb = Math.floor(0x80 * shade);
+            pixels[outIdx] = (255 << 24) | (wb << 16) | (wg << 8) | wr;
           }
         } else {
           // Open water: swells only — no white foam, just subtle water rise/fall

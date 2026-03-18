@@ -848,19 +848,22 @@ export class MapScene extends Phaser.Scene {
       structureMask, this._state.removedTrees,
     );
 
-    // 2. Woodcutter selects targets from placed trees → adds to removedTrees immediately
-    //    so the trees are gone from the static render (animator draws them during felling)
-    wcRenderer.findTargetsAndDrawPaths(
+    // 2. Woodcutter selects targets from placed trees (but does NOT remove yet —
+    //    trees stay in the static render so they don't "pop" at season transition)
+    const targetKeys = wcRenderer.findTargetsAndDrawPaths(
       pixels, PIXEL_RESOLUTION, wcRenderData, allPlacedTrees,
       this._state.removedTrees, riverMask, seed,
     );
 
-    // 3. Render trees — now skips any just-added to removedTrees by woodcutter
+    // 3. Render trees — targets are still present in the static render
     const treeResult = treeRenderer.renderTrees(
       pixels, topo, hydro, PIXEL_RESOLUTION, seed, season,
       structureMask, this._state.removedTrees,
     );
     const treeMask = treeResult.treeMask;
+
+    // 4. Now mark targets as removed for next season
+    for (const key of targetKeys) this._state.removedTrees.add(key);
 
     // Fishing camps — dock/wharf, hut, racks, static fishermen (before trees so clearing works)
     const fishingRenderer = new FishingCampRenderer();

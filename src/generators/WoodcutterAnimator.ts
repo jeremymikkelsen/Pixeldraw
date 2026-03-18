@@ -1,14 +1,15 @@
 /**
  * WoodcutterAnimator — per-frame animation for woodcutter buildings.
  *
- * Target trees are pre-removed from the static render (not drawn by
- * TreeRenderer). The animator draws them back as part of the animation:
- *  1. Standing tree visible while worker walks out + chops
- *  2. Tree falls (full sprite rotating)
- *  3. Log remains on ground, worker makes repeated haul trips
+ * Target trees stay in the static render (drawn by TreeRenderer).
+ * On the first animate() call, the background behind each target tree
+ * is captured. The animator then:
+ *  1. Walk + chop phases — tree is already in static render, just animate worker
+ *  2. Fall — erase standing tree (restore background), draw falling sprite
+ *  3. Log/haul — erase standing tree, draw log + hauling worker
  *
- * This means clicking through turns quickly still shows correct state —
- * the trees are already gone from removedTrees before any animation plays.
+ * Trees are added to removedTrees immediately after rendering so they
+ * won't appear in the next season's static render.
  *
  * Chimney smoke always. Water wheel always spins (sawmill).
  */
@@ -76,6 +77,10 @@ export class WoodcutterAnimator {
   private _dirty: { screenIdx: number; color: number }[] = [];
   private _savedThisFrame = new Set<number>();
 
+  /** Background pixels behind each target tree (captured once after static render). */
+  private _treeBackgrounds = new Map<PlacedTree, { screenIdx: number; color: number }[]>();
+  private _backgroundsCaptured = false;
+
   constructor(
     renderData: WoodcutterRenderData[],
     _pixels: Uint32Array,
@@ -103,6 +108,16 @@ export class WoodcutterAnimator {
     const N = this._N;
     const ext = this.extrusionMap;
 
+    // Capture background behind each target tree once (after static render + extrusion)
+    if (!this._backgroundsCaptured) {
+      for (const w of this._workers) {
+        for (const tree of w.data.targets) {
+          this._captureTreeBackground(pixels, N, ext, tree);
+        }
+      }
+      this._backgroundsCaptured = true;
+    }
+
     for (const d of this._dirty) pixels[d.screenIdx] = d.color;
     this._dirty = [];
     this._savedThisFrame = new Set<number>();
@@ -129,6 +144,14 @@ export class WoodcutterAnimator {
     const targetIdx = Math.min(Math.floor(globalT / targetDur), numTargets - 1);
     const localT = globalT - targetIdx * targetDur;
 
+    // Previously felled targets in this cycle: erase standing tree, draw log
+    for (let i = 0; i < targetIdx; i++) {
+      const prev = targets[i];
+      const prevFallsRight = prev.px > w.data.hutPx;
+      this._eraseStandingTree(pixels, prev);
+      this._drawLog(pixels, N, ext, prev.px, prev.py, prevFallsRight, prev);
+    }
+
     const tree = targets[targetIdx];
     const hx = w.data.hutPx;
     const hy = w.data.hutPy;
@@ -145,16 +168,14 @@ export class WoodcutterAnimator {
       const ft = localT / FELL_DURATION;
 
       if (ft < FELL_WALK) {
-        // Walking to tree — draw the standing tree (it's not in static render)
-        this._drawStandingTree(pixels, N, ext, tree);
+        // Walking to tree — tree is in static render, no need to draw it
         const p = ft / FELL_WALK;
         wx = Math.round(hx + (tx - hx) * p);
         wy = Math.round(hy + (ty - hy) * p);
         facingRight = fallsRight;
 
       } else if (ft < FELL_CHOP) {
-        // Chopping — tree still standing
-        this._drawStandingTree(pixels, N, ext, tree);
+        // Chopping — tree still standing in static render
         wx = tx + (fallsRight ? -2 : 2);
         wy = ty;
         facingRight = fallsRight;
@@ -164,7 +185,8 @@ export class WoodcutterAnimator {
         }
 
       } else if (ft < FELL_FALL) {
-        // Tree falls
+        // Tree falls — erase standing tree, draw falling version
+        this._eraseStandingTree(pixels, tree);
         wx = tx + (fallsRight ? -3 : 3);
         wy = ty;
         facingRight = fallsRight;
@@ -173,6 +195,7 @@ export class WoodcutterAnimator {
 
       } else if (ft < FELL_WORK) {
         // Processing downed tree into log
+        this._eraseStandingTree(pixels, tree);
         this._drawDownedTree(pixels, N, ext, tree, fallsRight);
         wx = tx + (fallsRight ? 3 : -3);
         wy = ty + 1;
@@ -185,6 +208,7 @@ export class WoodcutterAnimator {
 
       } else {
         // First pickup from fresh log
+        this._eraseStandingTree(pixels, tree);
         this._drawLog(pixels, N, ext, tx, ty, fallsRight, tree);
         wx = tx + (fallsRight ? 2 : -2);
         wy = ty;
@@ -192,6 +216,7 @@ export class WoodcutterAnimator {
       }
     } else {
       // ─── Hauling loop — log persists on ground ─────────────────────
+      this._eraseStandingTree(pixels, tree);
       this._drawLog(pixels, N, ext, tx, ty, fallsRight, tree);
 
       const haulT = localT - FELL_DURATION;
@@ -238,44 +263,40 @@ export class WoodcutterAnimator {
     }
   }
 
-  // ── Draw the standing tree (not in static render — we draw it here) ──────
-  private _drawStandingTree(
+  // ── Capture background pixels behind a target tree (screen space) ────────
+  private _captureTreeBackground(
     pixels: Uint32Array, N: number, ext: Int16Array | null,
     tree: PlacedTree,
   ): void {
-    const { w, h, data, flipped, canopyColors, trunkColors } = tree;
+    const { w, h, data, flipped } = tree;
     const startX = tree.px - Math.floor(w / 2);
     const startY = tree.py - h + 1;
+    const bg: { screenIdx: number; color: number }[] = [];
 
     for (let sy = 0; sy < h; sy++) {
       for (let sx = 0; sx < w; sx++) {
         const srcX = flipped ? (w - 1 - sx) : sx;
-        const cell = data[sy * w + srcX];
-        if (cell === 0) continue;
-
+        if (data[sy * w + srcX] === 0) continue;
         const px = startX + sx;
         const py = startY + sy;
         if (px < 0 || px >= N || py < 0 || py >= N) continue;
-
-        const srcIdx = py * N + px;
-        const screenIdx = this._screenIdx(srcIdx, N, ext);
+        const screenIdx = this._screenIdx(py * N + px, N, ext);
         if (screenIdx < 0) continue;
-
-        this._saveDirty(pixels, screenIdx);
-
-        if (cell === 1) { // trunk
-          const trunkMid = Math.floor(w / 2);
-          pixels[screenIdx] = srcX <= trunkMid
-            ? (trunkColors[0] ?? TRUNK_COLOR)
-            : (trunkColors[1] ?? TRUNK_COLOR);
-        } else { // canopy — use middle shade
-          const relX = (srcX - w / 2) / Math.max(1, w / 2);
-          const relY = (sy - h / 2) / Math.max(1, h / 2);
-          const light = relX * -0.707 + relY * -0.707;
-          const idx = Math.max(0, Math.min(4, Math.floor((light + 1) / 2 * 4.99)));
-          pixels[screenIdx] = canopyColors[idx] ?? canopyColors[2] ?? TRUNK_COLOR;
-        }
+        bg.push({ screenIdx, color: pixels[screenIdx] });
       }
+    }
+    this._treeBackgrounds.set(tree, bg);
+  }
+
+  // ── Erase standing tree by restoring captured background ────────────────
+  private _eraseStandingTree(
+    pixels: Uint32Array, tree: PlacedTree,
+  ): void {
+    const bg = this._treeBackgrounds.get(tree);
+    if (!bg) return;
+    for (const { screenIdx, color } of bg) {
+      this._saveDirty(pixels, screenIdx);
+      pixels[screenIdx] = color;
     }
   }
 

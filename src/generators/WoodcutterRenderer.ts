@@ -242,8 +242,9 @@ export class WoodcutterRenderer {
     removedTrees: Set<number>,
     riverMask: Uint8Array | null,
     seed: number,
-  ): void {
+  ): number[] {
     const NN = resolution;
+    const targetKeys: number[] = [];
     for (const rd of renderData) {
       const rng = mulberry32(seed ^ (rd.duchyIndex * 0x7e3a + 0xbeef + 0x1111));
       const numTargets = rd.variant === 'sawmill' ? 3 : 1;
@@ -252,10 +253,10 @@ export class WoodcutterRenderer {
       );
       for (const t of rd.targets) {
         this._drawDirtPath(pixels, NN, rd.hutPx, rd.hutPy, t.px, t.py, riverMask);
-        // Mark this tree as permanently removed so it won't come back next season
-        removedTrees.add(t.py * NN + t.px);
+        targetKeys.push(t.py * NN + t.px);
       }
     }
+    return targetKeys;
   }
 
   // ── Find actual placed trees near hut (same side of river) ───────────────

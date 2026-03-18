@@ -300,6 +300,9 @@ export class CoastalRenderer {
       }
     }
 
+    // Wave zone size — used by both whitecaps and shore waves
+    const WAVE_ZONE = season === Season.Winter ? 12 : 10;
+
     // ----------------------------------------------------------------
     // Winter whitecaps: wave-type pixels scattered across open ocean
     // ----------------------------------------------------------------
@@ -309,7 +312,7 @@ export class CoastalRenderer {
         for (let px = 0; px < N; px++) {
           const i = py * N + px;
           if (!isOcean[i]) continue;
-          if (landDist[i] <= 6) continue; // not near shore, those get regular waves
+          if (landDist[i] <= WAVE_ZONE) continue; // not near shore, those get regular waves
           if (rng() < WHITECAP_DENSITY) {
             const wx = (px + 0.5) * scale;
             const wy = (py + 0.5) * scale;
@@ -331,25 +334,23 @@ export class CoastalRenderer {
     // ----------------------------------------------------------------
     // Collect wave pixels (ocean pixels near shore)
     // ----------------------------------------------------------------
-    const WAVE_ZONE = season === Season.Winter ? 8 : 6; // wider wave zone in winter
-    const WAVE_START = SAND_WIDTH; // waves begin just past the sand strip
+    // Shore waves + swells: cover all ocean pixels from shore to WAVE_ZONE.
+    // Close to shore (over sand): breaking waves with foam.
+    // Further out: rolling swells that build into the breaking waves.
 
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
         if (!isOcean[i]) continue;
-        // Don't animate waves at river mouth pixels
         if (riverMask && riverMask[i]) continue;
 
         const dist = landDist[i];
-        if (dist <= WAVE_START || dist > WAVE_ZONE) continue;
+        if (dist > WAVE_ZONE) continue;
 
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
-        const waveIntensity = 1.0 - (dist - WAVE_START) / (WAVE_ZONE - WAVE_START);
+        const waveIntensity = 1.0 - dist / WAVE_ZONE;
 
-        // Shore waves: use coastline-local noise for phase offset so
-        // nearby shore pixels share the same wave cycle
         this._animatedPixels.push({
           idx: i,
           type: 'shorewave',
@@ -414,25 +415,52 @@ export class CoastalRenderer {
           pixels[outIdx] = this._baseColors.get(cp.idx)!;
         }
       } else if (cp.type === 'shorewave') {
-        // Rolling shore waves: foam line sweeps toward shore, then recedes
-        // dist=0 is at the shore, higher dist = further into the ocean
-        // waveDist: how far from shore the wavefront currently is
-        //   waveDist near 0 = wave has rolled all the way in
-        //   waveDist near 6 = wave has pulled all the way back
+        // Rolling shore waves with swells building into breaking surf.
+        // dist=0 is at the shore, higher dist = further out to sea.
+        // The wave front sweeps from far out (WAVE_RANGE) toward shore (0),
+        // then recedes back out.
+        const WAVE_RANGE = 10;
         const cycle = timeSec * 0.4 + cp.phase;
-        const waveDist = ((Math.sin(cycle) + 1) / 2) * 6;
-        const distToFront = Math.abs(cp.dist - waveDist);
+        const waveDist = ((Math.sin(cycle) + 1) / 2) * WAVE_RANGE;
+        const distToFront = cp.dist - waveDist;
+        const absDist = Math.abs(distToFront);
 
-        if (distToFront < 1.5) {
-          // Foam band at the wavefront
-          const bright = distToFront < 0.6;
-          pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
-        } else if (cp.dist < waveDist) {
-          // Between shore and wave = exposed wet sand (wave has pulled back past here)
-          pixels[outIdx] = WET_SAND_BY_SEASON[this._season];
+        if (absDist < 1.8) {
+          // Foam/crest band — brighter and wider near shore (breaking wave)
+          const foamWidth = cp.dist < 3 ? 1.8 : 1.2;
+          if (absDist < foamWidth) {
+            const bright = absDist < foamWidth * 0.4;
+            pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
+          } else {
+            pixels[outIdx] = this._baseColors.get(cp.idx)!;
+          }
+        } else if (distToFront < 0) {
+          // Shore side of wave (wave has passed this point heading to shore)
+          if (cp.dist <= 3) {
+            // Over sand zone: expose wet sand when wave recedes
+            pixels[outIdx] = WET_SAND_BY_SEASON[this._season];
+          } else {
+            // Open water: show trough (slightly darker base)
+            pixels[outIdx] = this._baseColors.get(cp.idx)!;
+          }
         } else {
-          // Behind the wave (ocean side) = normal water
-          pixels[outIdx] = this._baseColors.get(cp.idx)!;
+          // Ocean side of wave: swell — subtle brightening as water rises
+          // before the crest arrives
+          const swellFactor = Math.max(0, 1.0 - distToFront / 4);
+          if (swellFactor > 0.1) {
+            const base = this._baseColors.get(cp.idx)!;
+            // Lighten water slightly to show the swell rising
+            const r = base & 0xff;
+            const g = (base >> 8) & 0xff;
+            const b = (base >> 16) & 0xff;
+            const lift = Math.floor(swellFactor * 25);
+            const sr = Math.min(255, r + lift);
+            const sg = Math.min(255, g + lift + Math.floor(lift * 0.3));
+            const sb = Math.min(255, b + lift + Math.floor(lift * 0.5));
+            pixels[outIdx] = (255 << 24) | (sb << 16) | (sg << 8) | sr;
+          } else {
+            pixels[outIdx] = this._baseColors.get(cp.idx)!;
+          }
         }
       }
     }

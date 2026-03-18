@@ -4,18 +4,13 @@
  * Cows use stateless sine-based wander (like RiverAnimator wave phase)
  * so positions are deterministic at any given timeMs with no accumulated state.
  *
- * Each frame: restore interior pasture pixels (erase prev cows), then
- * stamp new cow positions.
+ * Each frame: restore only the pixels that were overwritten last frame,
+ * then stamp new cow positions — only on pixels that belong to the pasture.
  *
  * Cow sprite (4×3, Holstein 3/4 perspective):
  *   _ W B W
  *   W W W B
  *   B _ W _
- *
- * Mirrored when moving left:
- *   W B W _
- *   B W W W
- *   _ W _ B
  */
 
 import { mulberry32 } from './TopographyGenerator';
@@ -42,25 +37,30 @@ const COW_LEFT: number[][] = [
   [_, 0, _, 1],
 ];
 
+// Inset from pasture bounding box to keep cows fully inside
+const EDGE_INSET = COW_W + 2;
+
 // ── Cow instance ──────────────────────────────────────────────────────────────
 interface CowState {
-  // Home position (center of wander) in absolute pixel coords
   homeX: number;
   homeY: number;
-  // Sine wander parameters
   phaseX: number;
   phaseY: number;
   freqX: number;
   freqY: number;
   radiusX: number;
   radiusY: number;
-  // Sprite variant (slight patch variation)
   mirrorBase: boolean;
 }
 
 interface PastureInstance {
   cows: CowState[];
-  interiorPixels: { idx: number; color: number }[];
+  /** Set of source-space pixel indices that belong to this pasture */
+  validPixels: Set<number>;
+  /** Original colors for restoration (keyed by source index) */
+  baseColors: Map<number, number>;
+  /** Screen-space indices overwritten last frame (for targeted restore) */
+  dirtyScreen: { screenIdx: number; srcIdx: number }[];
   minX: number; maxX: number; minY: number; maxY: number;
 }
 
@@ -77,6 +77,7 @@ export class PastureAnimator {
     N: number,
     seed: number,
     season: Season,
+    maxCowsPerPasture: number = 3,
   ) {
     this._N = N;
     this._season = season;
@@ -87,21 +88,39 @@ export class PastureAnimator {
 
       const innerW = maxX - minX;
       const innerH = maxY - minY;
-      if (innerW < 8 || innerH < 8) continue;
+      if (innerW < 10 || innerH < 10) continue;
 
-      // Number of cows scales with area
+      // Build set of valid pixel indices and base color map
+      const validPixels = new Set<number>();
+      const baseColors = new Map<number, number>();
+      for (const p of interiorPixels) {
+        validPixels.add(p.idx);
+        baseColors.set(p.idx, p.color);
+      }
+
+      // Number of cows: 1 to maxCowsPerPasture, scaled by area
       const area = innerW * innerH;
-      const numCows = Math.max(1, Math.min(4, Math.floor(area / 120)));
+      const numCows = Math.max(1, Math.min(maxCowsPerPasture, Math.floor(area / 150)));
+
+      // Inset bounds for cow placement
+      const safeMinX = minX + EDGE_INSET;
+      const safeMaxX = maxX - EDGE_INSET;
+      const safeMinY = minY + EDGE_INSET;
+      const safeMaxY = maxY - EDGE_INSET;
+
+      if (safeMaxX <= safeMinX || safeMaxY <= safeMinY) continue;
+
+      const safeW = safeMaxX - safeMinX;
+      const safeH = safeMaxY - safeMinY;
 
       const cows: CowState[] = [];
       for (let ci = 0; ci < numCows; ci++) {
-        // Distribute home positions across the pasture
         const gridCols = numCows <= 2 ? numCows : 2;
         const gridRows = Math.ceil(numCows / gridCols);
         const col = ci % gridCols;
         const row = Math.floor(ci / gridCols);
-        const homeX = minX + (col + 1) * innerW / (gridCols + 1) + (rng() - 0.5) * 6;
-        const homeY = minY + (row + 1) * innerH / (gridRows + 1) + (rng() - 0.5) * 4;
+        const homeX = safeMinX + (col + 1) * safeW / (gridCols + 1) + (rng() - 0.5) * 4;
+        const homeY = safeMinY + (row + 1) * safeH / (gridRows + 1) + (rng() - 0.5) * 3;
 
         cows.push({
           homeX: Math.round(homeX),
@@ -110,46 +129,54 @@ export class PastureAnimator {
           phaseY: rng() * Math.PI * 2,
           freqX: 0.00045 + rng() * 0.00020,
           freqY: 0.00038 + rng() * 0.00018,
-          radiusX: Math.min(innerW * 0.22, 8),
-          radiusY: Math.min(innerH * 0.18, 6),
+          radiusX: Math.min(safeW * 0.2, 6),
+          radiusY: Math.min(safeH * 0.15, 4),
           mirrorBase: rng() > 0.5,
         });
       }
 
-      this._pastures.push({ cows, interiorPixels, minX, maxX, minY, maxY });
+      this._pastures.push({
+        cows,
+        validPixels,
+        baseColors,
+        dirtyScreen: [],
+        minX: safeMinX,
+        maxX: safeMaxX,
+        minY: safeMinY,
+        maxY: safeMaxY,
+      });
     }
   }
 
   animate(pixels: Uint32Array, timeMs: number): void {
-    // No cows in winter
     if (this._season === Season.Winter) return;
 
     const N = this._N;
     const ext = this.extrusionMap;
 
     for (const pasture of this._pastures) {
-      // Restore interior grass pixels at their extruded screen positions
-      for (const p of pasture.interiorPixels) {
-        const outIdx = this._screenIdx(p.idx, N, ext);
-        if (outIdx < 0) continue;
-        pixels[outIdx] = p.color;
+      // 1. Restore only the pixels we overwrote last frame
+      for (const d of pasture.dirtyScreen) {
+        const baseColor = pasture.baseColors.get(d.srcIdx);
+        if (baseColor !== undefined) {
+          pixels[d.screenIdx] = baseColor;
+        }
       }
+      pasture.dirtyScreen = [];
 
-      // Stamp cows at new positions (source coords → screen coords via extrusion)
+      // 2. Stamp cows at new positions
       for (const cow of pasture.cows) {
         const cx = Math.round(cow.homeX + Math.sin(timeMs * cow.freqX + cow.phaseX) * cow.radiusX);
         const cy = Math.round(cow.homeY + Math.sin(timeMs * cow.freqY + cow.phaseY) * cow.radiusY);
 
-        // Clamp to pasture source bounds with margin for sprite size
+        // Clamp to safe bounds
         const sx = Math.max(pasture.minX, Math.min(pasture.maxX - COW_W, cx));
         const sy = Math.max(pasture.minY, Math.min(pasture.maxY - COW_H, cy));
 
-        // Face direction based on horizontal velocity
         const vx = Math.cos(timeMs * cow.freqX + cow.phaseX);
         const facingRight = cow.mirrorBase ? vx > 0 : vx <= 0;
         const sprite = facingRight ? COW_RIGHT : COW_LEFT;
 
-        // Draw cow sprite — convert each source pixel to screen position
         for (let row = 0; row < COW_H; row++) {
           for (let col = 0; col < COW_W; col++) {
             const cell = sprite[row][col];
@@ -157,17 +184,23 @@ export class PastureAnimator {
             const px = sx + col;
             const py = sy + row;
             if (px < 0 || px >= N || py < 0 || py >= N) continue;
+
             const srcIdx = py * N + px;
-            const outIdx = this._screenIdx(srcIdx, N, ext);
-            if (outIdx < 0) continue;
-            pixels[outIdx] = cell === 0 ? COW_BODY : COW_PATCH;
+
+            // Only draw on pixels that actually belong to this pasture
+            if (!pasture.validPixels.has(srcIdx)) continue;
+
+            const screenIdx = this._screenIdx(srcIdx, N, ext);
+            if (screenIdx < 0) continue;
+
+            pixels[screenIdx] = cell === 0 ? COW_BODY : COW_PATCH;
+            pasture.dirtyScreen.push({ screenIdx, srcIdx });
           }
         }
       }
     }
   }
 
-  // Convert source pixel index to screen index via extrusionMap (mirrors RiverAnimator)
   private _screenIdx(srcIdx: number, N: number, ext: Int16Array | null): number {
     if (!ext) return srcIdx;
     const px = srcIdx % N;

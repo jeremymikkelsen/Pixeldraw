@@ -121,6 +121,7 @@ export class CoastalRenderer {
     // ----------------------------------------------------------------
     // We need to know which pixels are ocean and which are land
     const isOcean = new Uint8Array(N * N);
+    const isCoast = new Uint8Array(N * N);
     const elevation = new Float32Array(N * N);
 
     for (let py = 0; py < N; py++) {
@@ -149,6 +150,9 @@ export class CoastalRenderer {
         const terrain = topo.terrainType[bestR];
         if (terrain === 'ocean' || terrain === 'water') {
           isOcean[i] = 1;
+        }
+        if (terrain === 'coast') {
+          isCoast[i] = 1;
         }
         elevation[i] = topo.elevation[bestR];
       }
@@ -220,6 +224,7 @@ export class CoastalRenderer {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
         if (isOcean[i]) continue;
+        if (!isCoast[i]) continue; // only paint beach on coast terrain
 
         // Don't paint sand over rivers
         if (riverMask && riverMask[i]) continue;
@@ -259,9 +264,16 @@ export class CoastalRenderer {
     // gap at the ocean/beach boundary shows sand rather than dark ocean.
     const wetSand = WET_SAND_BY_SEASON[season];
     for (let i = 0; i < N * N; i++) {
-      if (isOcean[i] && landDist[i] <= 1) {
-        pixels[i] = wetSand;
-      }
+      if (!isOcean[i] || landDist[i] > 1) continue;
+      // Only paint wet sand next to coast terrain, not lowland/highland
+      const px2 = i % N;
+      const py2 = (i - px2) / N;
+      let adjCoast = false;
+      if (px2 > 0     && isCoast[i - 1]) adjCoast = true;
+      if (px2 < N - 1 && isCoast[i + 1]) adjCoast = true;
+      if (py2 > 0     && isCoast[i - N]) adjCoast = true;
+      if (py2 < N - 1 && isCoast[i + N]) adjCoast = true;
+      if (adjCoast) pixels[i] = wetSand;
     }
 
     // ----------------------------------------------------------------

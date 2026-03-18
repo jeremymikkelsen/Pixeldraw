@@ -226,19 +226,20 @@ export class CoastalRenderer {
     const SAND_ZONE = 3; // ocean pixels near shore where sand shows on wave recede
     const COBBLE_SHADES = [0x787880, 0x888890, 0x94949c, 0xa0a0a8, 0xacacb4];
 
-    // Cobble rock border — 1-2px on land pixels at the water's edge
+    // Cobble rock border — 1-2px on OCEAN pixels adjacent to land
+    // Placed on the water side so mountain extrusion doesn't create gaps.
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
-        if (isOcean[i]) continue;
+        if (!isOcean[i]) continue;
         if (riverMask && riverMask[i]) continue;
 
-        const dist = oceanDist[i];
+        const dist = landDist[i];
         if (dist > 3) continue;
 
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
-        const cobbleWidth = 2.0 + (beachNoise(wx * 0.03, wy * 0.03) + 1) * 0.5; // 2-3px
+        const cobbleWidth = 1.0 + (beachNoise(wx * 0.03, wy * 0.03) + 1) * 0.5; // 1-2px
 
         if (dist <= cobbleWidth) {
           const cobbleN = beachNoise(wx * 0.15, wy * 0.15);
@@ -321,6 +322,8 @@ export class CoastalRenderer {
 
         const dist = landDist[i];
         if (dist > WAVE_ZONE) continue;
+        // Skip cobble pixels (landDist 0-1) — they shouldn't animate
+        if (dist <= 1) continue;
 
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;

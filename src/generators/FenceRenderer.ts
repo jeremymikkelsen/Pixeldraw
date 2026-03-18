@@ -97,9 +97,12 @@ export class FenceRenderer {
     const cx = Math.max(0, Math.min(N - 1, px));
     const cy = Math.max(0, Math.min(N - 1, py));
 
-    // Clip: only draw on pixels that belong to the pasture region itself,
-    // so fence never bleeds into neighbouring terrain.
-    if (regionGrid && regionGrid[cy * N + cx] !== r1) return;
+    // Clip: draw on pixels that belong to the pasture or its neighbour,
+    // so fence sits right on the Voronoi edge boundary.
+    if (regionGrid) {
+      const pr = regionGrid[cy * N + cx];
+      if (pr !== r1 && pr !== _r2) return;
+    }
 
     const base = this._sBase(cy * N + cx, cy, ext);
     for (let h = 0; h < 3; h++) {
@@ -131,10 +134,11 @@ export class FenceRenderer {
 
     for (;;) {
       if (cx >= 0 && cx < N && cy >= 0 && cy < N) {
-        // Only draw on pixels that belong to the pasture region itself —
-        // drawing on the neighbour causes fence to bleed into adjacent cells.
+        // Draw on pixels that belong to the pasture or its neighbour,
+        // so fence sits right on the Voronoi edge boundary.
         const srcIdx = cy * N + cx;
-        const inRegion = !regionGrid || regionGrid[srcIdx] === r1;
+        const pr = regionGrid ? regionGrid[srcIdx] : r1;
+        const inRegion = (pr === r1 || pr === r2);
         if (inRegion) {
           const base = this._sBase(srcIdx, cy, ext);
           if (step > 0 && step % POST_INTERVAL === 0) {

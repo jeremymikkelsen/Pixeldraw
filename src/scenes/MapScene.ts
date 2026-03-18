@@ -414,8 +414,10 @@ export class MapScene extends Phaser.Scene {
       const w = this.scale.width;
       const h = this.scale.height;
 
-      // Only edge-pan when pointer is actually inside the canvas
-      if (mx > 0 && my > 0 && mx < w && my < h) {
+      // Only edge-pan when pointer is over the canvas (not a React UI element)
+      const elemUnder = document.elementFromPoint(mx, my);
+      const overCanvas = elemUnder === this.game.canvas || elemUnder === null;
+      if (overCanvas && mx > 0 && my > 0 && mx < w && my < h) {
         const edgeSpeed = EDGE_PAN_MAX_SPEED / cam.zoom;
         if (mx < EDGE_PAN_ZONE) {
           cam.scrollX -= edgeSpeed * (1 - mx / EDGE_PAN_ZONE) * dt;

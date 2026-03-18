@@ -18,6 +18,16 @@ export function RegionPanel() {
   const colorHex = house ? '#' + house.color.toString(16).padStart(6, '0') : undefined;
   const isCapital = duchy ? selectedRegion === duchy.capitalRegion : false;
 
+  // Check for buildings on this region
+  let woodcutterVariant: 'manual' | 'sawmill' | null = null;
+  for (const wc of gameState.woodcutters.values()) {
+    if (wc.regionIndex === selectedRegion) { woodcutterVariant = wc.variant; break; }
+  }
+  let fishingVariant: 'ocean' | 'river' | null = null;
+  for (const fc of gameState.fishingCamps.values()) {
+    if (fc.regionIndex === selectedRegion) { fishingVariant = fc.variant; break; }
+  }
+
   return (
     <div className="panel region-panel">
       <button className="panel-close" onClick={() => setSelectedRegion(null)}>✕</button>
@@ -36,6 +46,18 @@ export function RegionPanel() {
         <span className="panel-label">Moisture</span>
         <span className="panel-value">{(moisture * 100).toFixed(1)}%</span>
       </div>
+
+      {(woodcutterVariant || fishingVariant) && (
+        <div className="panel-row" style={{ marginTop: '6px' }}>
+          <span className="panel-label">Building</span>
+          <span className="panel-value">
+            {woodcutterVariant === 'sawmill' && '🪚 Sawmill'}
+            {woodcutterVariant === 'manual' && '🪓 Woodcutter'}
+            {fishingVariant === 'ocean' && '🐟 Fishing Pier'}
+            {fishingVariant === 'river' && '🐟 River Wharf'}
+          </span>
+        </div>
+      )}
 
       {duchy && house && (
         <div className="duchy-badge" style={{ borderLeftColor: colorHex }}>

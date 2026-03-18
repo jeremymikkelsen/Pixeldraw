@@ -14,9 +14,12 @@
 
 import { createNoise2D } from 'simplex-noise';
 import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
-import { packABGR } from './TerrainPalettes';
+import { packABGR, applyBrightness } from './TerrainPalettes';
 import { Season } from '../state/Season';
 import type { AgImprovementType } from '../state/AgImprovements';
+
+const GRAIN_BRIGHTNESS = 1.35;
+const VEGGIE_BRIGHTNESS = 1.25;
 
 // ── Grain field palettes ──────────────────────────────────────────────────────
 // Four colors per season: furrow, stalk base, stalk body, stalk tip
@@ -232,10 +235,11 @@ export class FarmRenderer {
     const row = perp  % 5;  // 0 = tip, 1,2 = body, 3 = base, 4 = furrow
 
     const isFurrow = col === 2 || row === 4;
-    if (isFurrow) return G_FURROW[season];
-    if (row === 3) return G_BASE[season];
-    if (row > 0)  return G_BODY[season];
-    return G_TIP[season];
+    const base = isFurrow ? G_FURROW[season]
+      : row === 3 ? G_BASE[season]
+      : row > 0   ? G_BODY[season]
+      : G_TIP[season];
+    return applyBrightness(base, isFurrow ? 1.0 : GRAIN_BRIGHTNESS);
   }
 
   // ── Veggie patch pixel ──────────────────────────────────────────────────────
@@ -276,7 +280,7 @@ export class FarmRenderer {
     // Noise for shade variation within dots
     const n = (noise(px * 0.3, py * 0.3) + 1) / 2;
     const [shadow, highlight] = CROP[cropType][season];
-    return n > 0.5 ? highlight : shadow;
+    return applyBrightness(n > 0.5 ? highlight : shadow, VEGGIE_BRIGHTNESS);
   }
 
   // ── Pasture pixel ───────────────────────────────────────────────────────────

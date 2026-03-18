@@ -57,6 +57,7 @@ export class MapScene extends Phaser.Scene {
   private _riverAnimator!: RiverAnimator;
   private _coastalRenderer!: CoastalRenderer;
   private _pastureAnimator: PastureAnimator | null = null;
+  private _duchyBorderPixels: { idx: number; color: number }[] = [];
 
   // Region hover highlight
   private _regionGrid!: Uint16Array | null;
@@ -464,6 +465,10 @@ export class MapScene extends Phaser.Scene {
         for (const bp of this._buildingPixels) {
           this._pixels[bp.idx] = bp.color;
         }
+        // Restore duchy borders on top of everything
+        for (const bp of this._duchyBorderPixels) {
+          this._pixels[bp.idx] = bp.color;
+        }
       }
 
       new Uint8ClampedArray(this._imageData.data.buffer)
@@ -789,13 +794,13 @@ export class MapScene extends Phaser.Scene {
     // Coastal animation
     coastalRenderer.extrusionMap = mountainRenderer.extrusionMap;
 
-    // Duchy borders over trees and mountains
+    // Structures (3/4 perspective with ground shadows)
+    const buildingMask = structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
+
+    // Duchy borders on top of everything — rendered last so they're always visible
     if (renderer.regionGrid) {
       renderDuchyBordersOnTop(pixels, renderer.regionGrid, this._state, PIXEL_RESOLUTION, mountainRenderer.extrusionMap);
     }
-
-    // Structures on top of duchy borders (3/4 perspective with ground shadows)
-    const buildingMask = structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
 
     // Capture building pixel colors NOW (before river animation overwrites them)
     const buildingPixelColors: { idx: number; color: number }[] = [];
@@ -807,6 +812,23 @@ export class MapScene extends Phaser.Scene {
 
     // Combine bridge + building pixels for per-frame restoration above river animation
     this._buildingPixels = [...bridgePixelColors, ...buildingPixelColors];
+
+    // Capture duchy border pixels for per-frame restoration (keeps borders above animation)
+    this._duchyBorderPixels = [];
+    if (renderer.regionGrid) {
+      const N = PIXEL_RESOLUTION;
+      for (let bi = 0; bi < N * N; bi++) {
+        // A border pixel is one whose region differs from at least one 4-neighbour
+        const r = renderer.regionGrid[bi];
+        const x = bi % N, y = (bi - x) / N;
+        let isBorder = false;
+        if (x > 0     && renderer.regionGrid[bi - 1] !== r) isBorder = true;
+        if (x < N - 1 && renderer.regionGrid[bi + 1] !== r) isBorder = true;
+        if (y > 0     && renderer.regionGrid[bi - N] !== r) isBorder = true;
+        if (y < N - 1 && renderer.regionGrid[bi + N] !== r) isBorder = true;
+        if (isBorder) this._duchyBorderPixels.push({ idx: bi, color: pixels[bi] });
+      }
+    }
 
     // Merge bridge mask into building mask so river animator skips bridge pixels too
     for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {

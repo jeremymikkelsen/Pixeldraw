@@ -412,6 +412,13 @@ html, body, #root {
   image-rendering: pixelated;
 }
 
+.house-card-crest {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
 .house-card-meta {
   display: flex;
   flex-direction: column;
@@ -468,13 +475,14 @@ html, body, #root {
 }
 
 .house-detail-portrait {
-  width: 120px;
-  height: 120px;
+  width: 180px;
+  height: 180px;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 2px solid rgba(255,255,255,0.2);
-  image-rendering: pixelated;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  image-rendering: auto;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  align-self: center;
 }
 
 .house-detail-crest {

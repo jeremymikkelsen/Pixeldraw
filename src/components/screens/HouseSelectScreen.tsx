@@ -40,7 +40,7 @@ export function HouseSelectScreen() {
       <p className="game-tagline">Your house shapes your duchy's destiny.</p>
 
       <div className="house-select-body">
-        {/* Left: grid of house cards */}
+        {/* Left: grid of house cards (crests) */}
         <div className="house-grid">
           {HOUSES.map((h, i) => (
             <button
@@ -49,9 +49,9 @@ export function HouseSelectScreen() {
               onClick={() => setSelected(i)}
             >
               <PortraitImg
-                className="house-card-portrait"
-                src={h.portraitUrl}
-                alt={h.rulerName}
+                className="house-card-crest"
+                src={h.crestUrl}
+                alt={`${h.name} crest`}
               />
               <div className="house-card-meta">
                 <span className="house-card-name">{h.name}</span>
@@ -62,20 +62,13 @@ export function HouseSelectScreen() {
           ))}
         </div>
 
-        {/* Right: detail panel */}
+        {/* Right: detail panel (ruler portrait) */}
         <div className="house-detail-panel">
-          <div className="house-detail-portrait-wrap">
-            <PortraitImg
-              className="house-detail-portrait"
-              src={house.portraitUrl}
-              alt={house.rulerName}
-            />
-            <PortraitImg
-              className="house-detail-crest"
-              src={house.crestUrl}
-              alt={`${house.name} crest`}
-            />
-          </div>
+          <PortraitImg
+            className="house-detail-portrait"
+            src={house.portraitUrl}
+            alt={house.rulerName}
+          />
 
           <div className="house-detail-header">
             <h2 className="house-detail-name" style={{ color: colorHex }}>{house.name}</h2>

@@ -63,13 +63,20 @@ export interface CoastalPixel {
 // ---------------------------------------------------------------------------
 // CoastalRenderer
 // ---------------------------------------------------------------------------
-// Wet sand colors per season (darker beach tones visible when wave recedes)
-const WET_SAND_BY_SEASON: Record<Season, number> = {
-  [Season.Spring]: packABGR(0x90, 0x80, 0x50),
-  [Season.Summer]: packABGR(0x90, 0x80, 0x50),
-  [Season.Fall]:   packABGR(0x80, 0x70, 0x48),
-  [Season.Winter]: packABGR(0x68, 0x60, 0x48),
+// Wet sand palettes per season — 4 shades for texture variation
+const WET_SAND_SHADES: Record<Season, number[]> = {
+  [Season.Spring]: [packABGR(0x82, 0x74, 0x48), packABGR(0x90, 0x80, 0x50), packABGR(0x9a, 0x8a, 0x58), packABGR(0x88, 0x78, 0x4c)],
+  [Season.Summer]: [packABGR(0x82, 0x74, 0x48), packABGR(0x90, 0x80, 0x50), packABGR(0x9a, 0x8a, 0x58), packABGR(0x88, 0x78, 0x4c)],
+  [Season.Fall]:   [packABGR(0x74, 0x64, 0x40), packABGR(0x80, 0x70, 0x48), packABGR(0x8a, 0x7a, 0x50), packABGR(0x78, 0x68, 0x44)],
+  [Season.Winter]: [packABGR(0x5c, 0x54, 0x40), packABGR(0x68, 0x60, 0x48), packABGR(0x72, 0x68, 0x4e), packABGR(0x60, 0x58, 0x44)],
 };
+
+/** Pick a textured sand color based on pixel position */
+function sandTexture(season: Season, idx: number): number {
+  // Simple hash from pixel index for per-pixel grain variation
+  const h = ((idx * 2654435761) >>> 0) & 3;
+  return WET_SAND_SHADES[season][h];
+}
 
 export class CoastalRenderer {
   private _animatedPixels: CoastalPixel[] = [];
@@ -401,8 +408,8 @@ export class CoastalRenderer {
             const bright = Math.abs(distToFront) < 0.5;
             pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
           } else if (distToFront < 0) {
-            // Shore side of wave: sand exposed as wave recedes
-            pixels[outIdx] = WET_SAND_BY_SEASON[this._season];
+            // Shore side of wave: textured sand exposed as wave recedes
+            pixels[outIdx] = sandTexture(this._season, cp.idx);
           } else {
             // Ocean side of wave: original water color (perfect match)
             pixels[outIdx] = this._baseColors.get(cp.idx)!;

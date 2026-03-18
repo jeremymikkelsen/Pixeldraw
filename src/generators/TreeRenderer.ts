@@ -412,14 +412,14 @@ const CONIFER_PALETTES_WINTER: TreePalette[] = [
   { canopy: [0x1c3c20, 0x2c502e, 0x3c6438, 0x88a898, 0xc0d4c8], trunk: [0x705c44, 0x4c3c2a] },
 ];
 
-function getDeciduousPalettes(season: Season, rng: () => number): TreePalette[] {
-  // Always consume rng() so the RNG state stays in sync across all seasons.
-  // Without this, Spring's blossom roll would shift subsequent rng() calls,
-  // causing trees to appear at different positions in different seasons.
-  const roll = rng();
+function getDeciduousPalettes(season: Season, px: number, py: number, seed: number): TreePalette[] {
   switch (season) {
-    case Season.Spring:
-      return roll < 0.15 ? DECIDUOUS_PALETTES_BLOSSOM : DECIDUOUS_PALETTES_SPRING;
+    case Season.Spring: {
+      // Derive blossom from tree position so the same trees blossom every year.
+      // Uses a hash of (px, py, seed) — no shared RNG consumption.
+      const h = mulberry32((px * 7919 + py * 104729) ^ seed ^ 0xb10550)();
+      return h < 0.15 ? DECIDUOUS_PALETTES_BLOSSOM : DECIDUOUS_PALETTES_SPRING;
+    }
     case Season.Fall:   return DECIDUOUS_PALETTES_FALL;
     case Season.Winter: return DECIDUOUS_PALETTES_WINTER;
     default:            return DECIDUOUS_PALETTES_SUMMER;
@@ -688,7 +688,7 @@ export class TreeRenderer {
 
       const isBareWinter = season === Season.Winter && !isConifer;
       const templates = isConifer ? CONIFER_TEMPLATES : (isBareWinter ? BARE_TEMPLATES : DECIDUOUS_TEMPLATES);
-      const palettes = isConifer ? getConiferPalettes(season) : getDeciduousPalettes(season, rng);
+      const palettes = isConifer ? getConiferPalettes(season) : getDeciduousPalettes(season, px, py, seed);
       const sizeRoll = rng() + moisture * 0.3;
       let templateIdx: number;
       if (sizeRoll > 1.0) {

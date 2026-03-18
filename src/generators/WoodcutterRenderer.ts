@@ -251,6 +251,8 @@ export class WoodcutterRenderer {
       );
       for (const t of rd.targets) {
         this._drawDirtPath(pixels, NN, rd.hutPx, rd.hutPy, t.px, t.py, riverMask);
+        // Mark this tree as permanently removed so it won't come back next season
+        removedTrees.add(t.py * NN + t.px);
       }
     }
   }

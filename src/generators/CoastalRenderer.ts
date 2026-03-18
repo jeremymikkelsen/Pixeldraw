@@ -212,46 +212,14 @@ export class CoastalRenderer {
     }
 
     // ----------------------------------------------------------------
-    // Paint beaches and cobble
-    // ----------------------------------------------------------------
     // Layout from ocean inward:
-    //   ocean → water → waves (landDist 4-7) → sand (landDist 1-3, on ocean pixels)
-    //   → cobble (oceanDist 0-2, on land pixels) → grass
+    //   ocean → water → swells → foam (over dynamic sand) → cobble → grass
+    // No static sand — sand only appears dynamically when waves recede.
     // ----------------------------------------------------------------
-    const SAND_WIDTH = 3; // pixels of sand strip on ocean side
+    const SAND_ZONE = 3; // ocean pixels near shore where sand shows on wave recede
     const COBBLE_SHADES = [0x787880, 0x888890, 0x94949c, 0xa0a0a8, 0xacacb4];
 
-    // Pass A: Paint beach sand on OCEAN pixels near land (sand sits on water side)
-    for (let py = 0; py < N; py++) {
-      for (let px = 0; px < N; px++) {
-        const i = py * N + px;
-        if (!isOcean[i]) continue;
-        if (riverMask && riverMask[i]) continue;
-
-        const dist = landDist[i];
-        if (dist > SAND_WIDTH) continue;
-
-        const wx = (px + 0.5) * scale;
-        const wy = (py + 0.5) * scale;
-        const noiseVal = beachNoise(wx * 0.01, wy * 0.01);
-        const sandEdge = SAND_WIDTH + noiseVal * 0.8;
-        if (dist > sandEdge) continue;
-
-        const beachColors = BEACH_COLORS_BY_SEASON[season];
-        // Darker near water (dist=sandEdge), lighter near land (dist=0)
-        const t = 1.0 - dist / SAND_WIDTH;
-        const colorIdx = Math.min(beachColors.length - 1,
-          Math.floor(t * beachColors.length));
-        const detailN = beachNoise(wx * 0.05, wy * 0.05);
-        const adjustedIdx = Math.max(0, Math.min(beachColors.length - 1,
-          colorIdx + Math.floor(detailN * 1.5)));
-
-        const rgb = beachColors[adjustedIdx];
-        pixels[i] = applyBrightness(rgb, 0.85 + detailN * 0.15);
-      }
-    }
-
-    // Pass B: Cobble rock border — 1-2px on land pixels at the water's edge
+    // Cobble rock border — 1-2px on land pixels at the water's edge
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
@@ -424,8 +392,8 @@ export class CoastalRenderer {
         const distToFront = cp.dist - waveDist;
 
         if (cp.dist <= SAND_ZONE) {
-          // Sand zone: white foam in broken segments, wet sand when wave recedes.
-          // Use phase to create gaps — only ~60% of coastline shows foam at once.
+          // Near-shore zone: foam segments over sand, water otherwise.
+          // No static sand — base color IS the original water.
           const segmentNoise = Math.sin(cp.phase * 3.7) * Math.cos(cp.phase * 2.1 + timeSec * 0.15);
           const showFoam = segmentNoise > -0.2;
 
@@ -433,23 +401,11 @@ export class CoastalRenderer {
             const bright = Math.abs(distToFront) < 0.5;
             pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
           } else if (distToFront < 0) {
-            // Shore side of wave: wet sand exposed
+            // Shore side of wave: sand exposed as wave recedes
             pixels[outIdx] = WET_SAND_BY_SEASON[this._season];
           } else {
-            // Ocean side of wave: show original water color (pre-sand, with lighting)
-            // Use a dim water tone that roughly matches nearby ocean shading
-            const base = this._baseColors.get(cp.idx)!;
-            // Blend toward water blue — base was painted as sand, shift it to water
-            const r = base & 0xff;
-            const g = (base >> 8) & 0xff;
-            const b = (base >> 16) & 0xff;
-            // Weighted blend: 80% water target, 20% luminance from base for shading
-            const lum = (r * 77 + g * 150 + b * 29) >> 8;
-            const shade = lum / 180; // normalize
-            const wr = Math.floor(0x2a * shade);
-            const wg = Math.floor(0x5c * shade);
-            const wb = Math.floor(0x80 * shade);
-            pixels[outIdx] = (255 << 24) | (wb << 16) | (wg << 8) | wr;
+            // Ocean side of wave: original water color (perfect match)
+            pixels[outIdx] = this._baseColors.get(cp.idx)!;
           }
         } else {
           // Open water: swells only — no white foam, just subtle water rise/fall

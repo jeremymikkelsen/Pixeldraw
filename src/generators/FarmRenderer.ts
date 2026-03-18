@@ -18,36 +18,8 @@ import { packABGR, applyBrightness } from './TerrainPalettes';
 import { Season } from '../state/Season';
 import type { AgImprovementType } from '../state/AgImprovements';
 
-const GRAIN_BRIGHTNESS = 1.35;
+const GRAIN_BRIGHTNESS = 1.25;
 const VEGGIE_BRIGHTNESS = 1.25;
-
-// ── Grain field palettes (RGB hex — applyBrightness converts to ABGR) ───────
-// Four colors per season: furrow, stalk base, stalk body, stalk tip
-
-const G_FURROW = {
-  [Season.Winter]: 0x2e1e10,
-  [Season.Spring]: 0x382816,
-  [Season.Summer]: 0x282010,
-  [Season.Fall]: 0x382810,
-};
-const G_BASE = {
-  [Season.Winter]: 0x44301c,
-  [Season.Spring]: 0x2a4a18,
-  [Season.Summer]: 0x3a5018,
-  [Season.Fall]: 0x8a6818,
-};
-const G_BODY = {
-  [Season.Winter]: 0x503c24,
-  [Season.Spring]: 0x3a6828,
-  [Season.Summer]: 0x5a7828,
-  [Season.Fall]: 0xc89828,
-};
-const G_TIP = {
-  [Season.Winter]: 0x58462c,
-  [Season.Spring]: 0x58a03c,
-  [Season.Summer]: 0x88aa30,
-  [Season.Fall]: 0xe8c040,
-};
 
 // ── Veggie field palettes ─────────────────────────────────────────────────────
 
@@ -135,46 +107,71 @@ export class FarmRenderer {
     const rngNoise = mulberry32(seed ^ 0xfa4a01);
     const noise = createNoise2D(rngNoise);
 
-    // Per-region metadata + crop assignment
-    const meta = new Map<number, RegionMeta>();
-    const veggieCrops = new Map<number, [number, number, number]>(); // region → [cropA, cropB, cropC]
-
-    for (const r of improvements.keys()) {
-      meta.set(r, { minX: N, maxX: 0, minY: N, maxY: 0, longX: 1, longY: 0, perpX: 0, perpY: 1 });
+    // Per-region PCA accumulators
+    const regionIds = new Set(improvements.keys());
+    const stats = new Map<number, {
+      sx: number; sy: number; sxx: number; syy: number; sxy: number; n: number;
+      minX: number; maxX: number; minY: number; maxY: number;
+    }>();
+    for (const r of regionIds) {
+      stats.set(r, { sx: 0, sy: 0, sxx: 0, syy: 0, sxy: 0, n: 0,
+        minX: N, maxX: 0, minY: N, maxY: 0 });
     }
 
-    // Pass 1: build bounding boxes
+    // Pass 1: accumulate pixel statistics per region
     for (let i = 0; i < N * N; i++) {
       const r = regionGrid[i];
-      const m = meta.get(r);
-      if (!m) continue;
+      const s = stats.get(r);
+      if (!s) continue;
       const px = i % N;
       const py = (i - px) / N;
-      if (px < m.minX) m.minX = px;
-      if (px > m.maxX) m.maxX = px;
-      if (py < m.minY) m.minY = py;
-      if (py > m.maxY) m.maxY = py;
+      s.sx += px; s.sy += py;
+      s.sxx += px * px; s.syy += py * py; s.sxy += px * py;
+      s.n++;
+      if (px < s.minX) s.minX = px;
+      if (px > s.maxX) s.maxX = px;
+      if (py < s.minY) s.minY = py;
+      if (py > s.maxY) s.maxY = py;
     }
 
-    // Compute axes and veggie crop assignments
-    for (const [r, m] of meta) {
-      const W = m.maxX - m.minX;
-      const H = m.maxY - m.minY;
-      if (W >= H) {
-        // Long axis horizontal → rows run left-right, stalks grow up (along -Y)
-        m.longX = 1; m.longY = 0;
-        m.perpX = 0; m.perpY = 1;
+    // Compute PCA long axis and perpendicular for each region
+    const meta = new Map<number, RegionMeta>();
+    const veggieCrops = new Map<number, [number, number, number]>();
+
+    for (const [r, s] of stats) {
+      if (s.n === 0) continue;
+      const cx = s.sx / s.n;
+      const cy = s.sy / s.n;
+      const cxx = s.sxx / s.n - cx * cx;
+      const cyy = s.syy / s.n - cy * cy;
+      const cxy = s.sxy / s.n - cx * cy;
+
+      // Eigenvector of larger eigenvalue of [[cxx, cxy], [cxy, cyy]]
+      let lx: number, ly: number;
+      if (Math.abs(cxy) > 1e-6) {
+        const diff = cxx - cyy;
+        const disc = Math.sqrt(diff * diff + 4 * cxy * cxy);
+        const lambda = ((cxx + cyy) + disc) / 2;
+        lx = lambda - cyy;
+        ly = cxy;
+      } else if (cxx >= cyy) {
+        lx = 1; ly = 0;
       } else {
-        // Long axis vertical → rows run top-bottom, stalks grow right (along X)
-        m.longX = 0; m.longY = 1;
-        m.perpX = 1; m.perpY = 0;
+        lx = 0; ly = 1;
       }
+      const len = Math.sqrt(lx * lx + ly * ly) || 1;
+      lx /= len; ly /= len;
+
+      meta.set(r, {
+        minX: s.minX, maxX: s.maxX, minY: s.minY, maxY: s.maxY,
+        longX: lx, longY: ly,
+        perpX: -ly, perpY: lx,
+      });
 
       if (improvements.get(r) === 'veggie') {
-        const rng = mulberry32(seed ^ (r * 0xa3b4c5));
+        const rng2 = mulberry32(seed ^ (r * 0xa3b4c5));
         const types: number[] = [0, 1, 2];
-        // Shuffle
-        [types[0], types[Math.floor(rng() * 3)]] = [types[Math.floor(rng() * 3)], types[0]];
+        [types[0], types[Math.floor(rng2() * 3)]] = [types[Math.floor(rng2() * 3)], types[0]];
         veggieCrops.set(r, [types[0], types[1], types[2]]);
       }
     }
@@ -211,7 +208,7 @@ export class FarmRenderer {
 
       switch (type) {
         case 'grain':
-          pixels[i] = this._grainPixel(px, py, m, season);
+          pixels[i] = this._grainPixel(px, py, m, season, noise);
           break;
         case 'veggie': {
           const crops = veggieCrops.get(r)!;
@@ -229,20 +226,59 @@ export class FarmRenderer {
 
   }
 
-  // ── Grain stalk pixel ───────────────────────────────────────────────────────
-  private _grainPixel(px: number, py: number, m: RegionMeta, season: Season): number {
-    // Project onto perpendicular axis (across rows) — rows run along the long axis
-    const perp = Math.floor(px * m.perpX + py * m.perpY);
+  // ── Grain stalk pixel — seasonal patterns ───────────────────────────────────
+  private _grainPixel(
+    px: number, py: number, m: RegionMeta, season: Season,
+    noise: (x: number, y: number) => number,
+  ): number {
+    const perp = px * m.perpX + py * m.perpY;
+    const along = px * m.longX + py * m.longY;
 
-    // Period 5: 1px furrow + 4px of wheat (base, body, body, tip)
-    const row = ((perp % 5) + 5) % 5;
+    // ── Winter: bare brown soil + snow patches + dark stubble ──
+    if (season === Season.Winter) {
+      const n1 = noise(px * 0.06, py * 0.06);
+      const n2 = noise(px * 0.18 + 50, py * 0.18 + 50);
+      if (n1 > 0.25) {
+        // Snow patch
+        return applyBrightness(n1 > 0.5 ? 0xdce4ec : 0xc4d0dc, 0.95 + n2 * 0.08);
+      }
+      if (n2 > 0.65) {
+        // Dark stubble / cracks
+        return applyBrightness(0x30201a, 1.0);
+      }
+      return applyBrightness(n2 > 0 ? 0x685040 : 0x584030, 1.0);
+    }
 
-    if (row === 0) return applyBrightness(G_FURROW[season], 1.0);
+    // ── Spring: brown soil with small green sprout clusters ──
+    if (season === Season.Spring) {
+      const gp = ((Math.floor(perp) % 5) + 5) % 5;
+      const ga = ((Math.floor(along) % 5) + 5) % 5;
+      // 2x2 sprout in each 5×5 cell
+      if (gp >= 1 && gp <= 2 && ga >= 1 && ga <= 2) {
+        const n = noise(px * 0.25, py * 0.25);
+        return applyBrightness(n > 0 ? 0x78b830 : 0x4a8020, GRAIN_BRIGHTNESS);
+      }
+      const sn = noise(px * 0.12, py * 0.12);
+      return applyBrightness(sn > 0 ? 0x6a4c2c : 0x5a3c20, 1.0);
+    }
 
-    const base = row === 1 ? G_BASE[season]
-      : row <= 3 ? G_BODY[season]
-      : G_TIP[season];
-    return applyBrightness(base, GRAIN_BRIGHTNESS);
+    // ── Summer: dense green rows, thin furrow ──
+    if (season === Season.Summer) {
+      const row = ((Math.floor(perp) % 4) + 4) % 4;
+      if (row === 0) return applyBrightness(0x2a3818, 1.0);
+      const n = noise(px * 0.2, py * 0.2);
+      if (row === 1) return applyBrightness(0x3a5818, GRAIN_BRIGHTNESS);
+      if (row === 2) return applyBrightness(n > 0 ? 0x5a9830 : 0x4a8828, GRAIN_BRIGHTNESS);
+      return applyBrightness(n > 0 ? 0x88b838 : 0x70a030, GRAIN_BRIGHTNESS);
+    }
+
+    // ── Fall: dense golden wheat rows ──
+    const row = ((Math.floor(perp) % 4) + 4) % 4;
+    if (row === 0) return applyBrightness(0x8a6820, 1.0);
+    const n = noise(px * 0.2, py * 0.2);
+    if (row === 1) return applyBrightness(n > 0 ? 0xb88828 : 0xa07820, GRAIN_BRIGHTNESS);
+    if (row === 2) return applyBrightness(n > 0 ? 0xd8a838 : 0xc89830, GRAIN_BRIGHTNESS);
+    return applyBrightness(n > 0 ? 0xf0cc50 : 0xe8c040, GRAIN_BRIGHTNESS);
   }
 
   // ── Veggie patch pixel ──────────────────────────────────────────────────────

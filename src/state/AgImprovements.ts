@@ -16,8 +16,8 @@ export type AgImprovementType = 'grain' | 'veggie' | 'pasture';
  * Eligible: lowland, no river, mid elevation, not capital region, not on a road.
  * Returns a Map from regionIndex → improvement type.
  */
-// Set to true to fill all eligible lowland tiles for visual testing
-const FILL_ALL_FOR_TESTING = true;
+const TILES_PER_DUCHY = 40;
+const GRAIN_RATIO = 0.50; // 50% grain, 25% veggie, 25% pasture
 
 export function assignAgImprovements(
   topo: TopographyGenerator,
@@ -27,7 +27,6 @@ export function assignAgImprovements(
   roads: RoadSegment[] = [],
 ): Map<number, AgImprovementType> {
   const result = new Map<number, AgImprovementType>();
-  const TYPES: AgImprovementType[] = ['grain', 'veggie', 'pasture'];
 
   // Build set of regions that lie on any road path
   const roadRegions = new Set<number>();
@@ -52,20 +51,25 @@ export function assignAgImprovements(
 
     if (eligible.length === 0) continue;
 
-    if (FILL_ALL_FOR_TESTING) {
-      // Assign a random improvement to every eligible tile
-      for (const r of eligible) {
-        result.set(r, TYPES[Math.floor(rng() * TYPES.length)]);
-      }
-    } else {
-      // Production: one of each per duchy
-      const shuffled = [...eligible];
-      for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(rng() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-      }
-      for (let t = 0; t < TYPES.length && t < shuffled.length; t++) {
-        result.set(shuffled[t], TYPES[t]);
+    // Shuffle and take up to TILES_PER_DUCHY
+    const shuffled = [...eligible];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    const count = Math.min(TILES_PER_DUCHY, shuffled.length);
+    const grainCount = Math.floor(count * GRAIN_RATIO);
+    const remaining = count - grainCount;
+    const veggieCount = Math.floor(remaining / 2);
+
+    for (let t = 0; t < count; t++) {
+      if (t < grainCount) {
+        result.set(shuffled[t], 'grain');
+      } else if (t < grainCount + veggieCount) {
+        result.set(shuffled[t], 'veggie');
+      } else {
+        result.set(shuffled[t], 'pasture');
       }
     }
   }

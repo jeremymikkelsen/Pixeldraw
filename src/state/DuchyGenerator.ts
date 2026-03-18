@@ -16,7 +16,7 @@ import { buildAdjacencyList } from '../utils/adjacency';
 import { Duchy, HOUSES } from './Duchy';
 
 const NUM_DUCHIES = 9;
-const REGIONS_PER_DUCHY = 20;
+const REGIONS_PER_DUCHY = 40;
 const MAX_RETRIES = 20;
 
 /** Terrain types valid for duchy territory */

@@ -413,10 +413,13 @@ const CONIFER_PALETTES_WINTER: TreePalette[] = [
 ];
 
 function getDeciduousPalettes(season: Season, rng: () => number): TreePalette[] {
+  // Always consume rng() so the RNG state stays in sync across all seasons.
+  // Without this, Spring's blossom roll would shift subsequent rng() calls,
+  // causing trees to appear at different positions in different seasons.
+  const roll = rng();
   switch (season) {
     case Season.Spring:
-      // 15% chance of blossom palette
-      return rng() < 0.15 ? DECIDUOUS_PALETTES_BLOSSOM : DECIDUOUS_PALETTES_SPRING;
+      return roll < 0.15 ? DECIDUOUS_PALETTES_BLOSSOM : DECIDUOUS_PALETTES_SPRING;
     case Season.Fall:   return DECIDUOUS_PALETTES_FALL;
     case Season.Winter: return DECIDUOUS_PALETTES_WINTER;
     default:            return DECIDUOUS_PALETTES_SUMMER;

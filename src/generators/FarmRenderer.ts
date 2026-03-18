@@ -21,32 +21,32 @@ import type { AgImprovementType } from '../state/AgImprovements';
 const GRAIN_BRIGHTNESS = 1.35;
 const VEGGIE_BRIGHTNESS = 1.25;
 
-// ── Grain field palettes ──────────────────────────────────────────────────────
+// ── Grain field palettes (RGB hex — applyBrightness converts to ABGR) ───────
 // Four colors per season: furrow, stalk base, stalk body, stalk tip
 
 const G_FURROW = {
-  [Season.Winter]: packABGR(0x2e, 0x1e, 0x10),
-  [Season.Spring]: packABGR(0x38, 0x28, 0x16),
-  [Season.Summer]: packABGR(0x28, 0x20, 0x10),
-  [Season.Fall]: packABGR(0x38, 0x28, 0x10),
+  [Season.Winter]: 0x2e1e10,
+  [Season.Spring]: 0x382816,
+  [Season.Summer]: 0x282010,
+  [Season.Fall]: 0x382810,
 };
 const G_BASE = {
-  [Season.Winter]: packABGR(0x44, 0x30, 0x1c),
-  [Season.Spring]: packABGR(0x2a, 0x4a, 0x18),
-  [Season.Summer]: packABGR(0x3a, 0x50, 0x18),
-  [Season.Fall]: packABGR(0x72, 0x42, 0x10),
+  [Season.Winter]: 0x44301c,
+  [Season.Spring]: 0x2a4a18,
+  [Season.Summer]: 0x3a5018,
+  [Season.Fall]: 0x8a6818,
 };
 const G_BODY = {
-  [Season.Winter]: packABGR(0x50, 0x3c, 0x24),
-  [Season.Spring]: packABGR(0x3a, 0x68, 0x28),
-  [Season.Summer]: packABGR(0x5a, 0x78, 0x28),
-  [Season.Fall]: packABGR(0xa0, 0x68, 0x20),
+  [Season.Winter]: 0x503c24,
+  [Season.Spring]: 0x3a6828,
+  [Season.Summer]: 0x5a7828,
+  [Season.Fall]: 0xc89828,
 };
 const G_TIP = {
-  [Season.Winter]: packABGR(0x58, 0x46, 0x2c),
-  [Season.Spring]: packABGR(0x58, 0xa0, 0x3c),
-  [Season.Summer]: packABGR(0x88, 0xaa, 0x30),
-  [Season.Fall]: packABGR(0xe0, 0xa8, 0x30),
+  [Season.Winter]: 0x58462c,
+  [Season.Spring]: 0x58a03c,
+  [Season.Summer]: 0x88aa30,
+  [Season.Fall]: 0xe8c040,
 };
 
 // ── Veggie field palettes ─────────────────────────────────────────────────────
@@ -58,45 +58,46 @@ const VEGGIE_SOIL = {
   [Season.Fall]: packABGR(0x52, 0x3c, 0x20),
 };
 
-// 3 crop types × 4 seasons — each entry: [shadow, highlight]
+// 3 crop types × 4 seasons — each entry: [shadow, highlight] (RGB hex)
 // Type 0: Leafy greens (brassica/lettuce)
 // Type 1: Root veg / carrot tops (wispy green → orange autumn)
 // Type 2: Flowers / poppies (green → red)
 const CROP: Record<number, Record<Season, [number, number]>> = {
   0: {
-    [Season.Winter]: [packABGR(0x68, 0x58, 0x48), packABGR(0x68, 0x58, 0x48)],
-    [Season.Spring]: [packABGR(0x22, 0x52, 0x20), packABGR(0x32, 0x78, 0x30)],
-    [Season.Summer]: [packABGR(0x1c, 0x4a, 0x1c), packABGR(0x2e, 0x72, 0x2c)],
-    [Season.Fall]: [packABGR(0x5a, 0x6c, 0x10), packABGR(0x80, 0x98, 0x20)],
+    [Season.Winter]: [0x685848, 0x685848],
+    [Season.Spring]: [0x225220, 0x327830],
+    [Season.Summer]: [0x1c4a1c, 0x2e722c],
+    [Season.Fall]: [0x5a6c10, 0x809820],
   },
   1: {
-    [Season.Winter]: [packABGR(0x68, 0x58, 0x48), packABGR(0x68, 0x58, 0x48)],
-    [Season.Spring]: [packABGR(0x48, 0x78, 0x28), packABGR(0x68, 0xa0, 0x38)],
-    [Season.Summer]: [packABGR(0x48, 0x78, 0x28), packABGR(0x68, 0xa0, 0x38)],
-    [Season.Fall]: [packABGR(0x90, 0x40, 0x10), packABGR(0xd8, 0x70, 0x20)],
+    [Season.Winter]: [0x685848, 0x685848],
+    [Season.Spring]: [0x487828, 0x68a038],
+    [Season.Summer]: [0x487828, 0x68a038],
+    [Season.Fall]: [0x904010, 0xd87020],
   },
   2: {
-    [Season.Winter]: [packABGR(0x68, 0x58, 0x48), packABGR(0x68, 0x58, 0x48)],
-    [Season.Spring]: [packABGR(0x28, 0x60, 0x20), packABGR(0x3a, 0x88, 0x28)],
-    [Season.Summer]: [packABGR(0x80, 0x18, 0x12), packABGR(0xcc, 0x28, 0x18)],
-    [Season.Fall]: [packABGR(0x78, 0x18, 0x10), packABGR(0xb8, 0x20, 0x14)],
+    [Season.Winter]: [0x685848, 0x685848],
+    [Season.Spring]: [0x286020, 0x3a8828],
+    [Season.Summer]: [0x801812, 0xcc2818],
+    [Season.Fall]: [0x781810, 0xb82014],
   },
 };
 
 // ── Pasture palettes ──────────────────────────────────────────────────────────
 // A and B are kept close together so the noise variation reads as a uniform
 // green field rather than a blotchy two-tone pattern.
+// Pasture colors (RGB hex — applyBrightness converts to ABGR)
 const PASTURE_A = {
-  [Season.Winter]: packABGR(0xb8, 0xc4, 0xb0),
-  [Season.Spring]: packABGR(0x52, 0x8a, 0x2e),
-  [Season.Summer]: packABGR(0x46, 0x7c, 0x28),
-  [Season.Fall]:   packABGR(0x58, 0x6e, 0x28),
+  [Season.Winter]: 0xb8c4b0,
+  [Season.Spring]: 0x528a2e,
+  [Season.Summer]: 0x467c28,
+  [Season.Fall]:   0x586e28,
 };
 const PASTURE_B = {
-  [Season.Winter]: packABGR(0xc4, 0xd0, 0xbc),
-  [Season.Spring]: packABGR(0x5c, 0x98, 0x34),
-  [Season.Summer]: packABGR(0x50, 0x8a, 0x2e),
-  [Season.Fall]:   packABGR(0x62, 0x7a, 0x2c),
+  [Season.Winter]: 0xc4d0bc,
+  [Season.Spring]: 0x5c9834,
+  [Season.Summer]: 0x508a2e,
+  [Season.Fall]:   0x627a2c,
 };
 
 // ── RegionMeta: axis info per improvement region ──────────────────────────────
@@ -230,19 +231,18 @@ export class FarmRenderer {
 
   // ── Grain stalk pixel ───────────────────────────────────────────────────────
   private _grainPixel(px: number, py: number, m: RegionMeta, season: Season): number {
-    // Project onto long axis (stalk column index) and perp axis (stalk height)
-    const along = Math.floor(px * m.longX + py * m.longY);
-    const perp  = Math.floor(px * m.perpX + py * m.perpY);
+    // Project onto perpendicular axis (across rows) — rows run along the long axis
+    const perp = Math.floor(px * m.perpX + py * m.perpY);
 
-    const col = along % 3;  // 0,1 = stalk column; 2 = gap
-    const row = perp  % 5;  // 0 = tip, 1,2 = body, 3 = base, 4 = furrow
+    // Period 5: 1px furrow + 4px of wheat (base, body, body, tip)
+    const row = ((perp % 5) + 5) % 5;
 
-    const isFurrow = col === 2 || row === 4;
-    const base = isFurrow ? G_FURROW[season]
-      : row === 3 ? G_BASE[season]
-      : row > 0   ? G_BODY[season]
+    if (row === 0) return applyBrightness(G_FURROW[season], 1.0);
+
+    const base = row === 1 ? G_BASE[season]
+      : row <= 3 ? G_BODY[season]
       : G_TIP[season];
-    return applyBrightness(base, isFurrow ? 1.0 : GRAIN_BRIGHTNESS);
+    return applyBrightness(base, GRAIN_BRIGHTNESS);
   }
 
   // ── Veggie patch pixel ──────────────────────────────────────────────────────

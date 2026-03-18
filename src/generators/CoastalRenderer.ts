@@ -250,6 +250,17 @@ export class CoastalRenderer {
         const adjustedIdx = Math.max(0, Math.min(beachColors.length - 1,
           colorIdx + Math.floor(detailN * 1.5)));
 
+        // Cobble rock at the inland edge of the beach (1-2px band)
+        const cobbleThreshold = edgeVariation - 1 - (beachNoise(wx * 0.04, wy * 0.04) + 1) * 0.5;
+        if (dist >= cobbleThreshold) {
+          const cobbleN = beachNoise(wx * 0.15, wy * 0.15);
+          const cobbleShades = [0x888880, 0x989890, 0xa8a8a0, 0xb0b0a8];
+          const ci = Math.min(cobbleShades.length - 1,
+            Math.floor(((cobbleN + 1) / 2) * cobbleShades.length));
+          pixels[i] = applyBrightness(cobbleShades[ci], 0.85 + cobbleN * 0.1);
+          continue;
+        }
+
         const rgb = beachColors[adjustedIdx];
         // Apply same directional lighting as ground
         const brightness = 0.85 + detailN * 0.15;

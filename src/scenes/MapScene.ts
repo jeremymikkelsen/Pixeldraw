@@ -836,14 +836,15 @@ export class MapScene extends Phaser.Scene {
 
     // Trees with seasonal palettes (pass structureMask + removedTrees to avoid overlapping)
     const treeRenderer = new TreeRenderer();
-    const treeMask = treeRenderer.renderTrees(
+    const treeResult = treeRenderer.renderTrees(
       pixels, topo, hydro, PIXEL_RESOLUTION, seed, season,
       structureMask, this._state.removedTrees,
     );
+    const treeMask = treeResult.treeMask;
 
-    // Woodcutter phase 2: now that treeMask exists, find targets + draw dirt haul paths
+    // Woodcutter phase 2: now that trees are placed, find targets + draw dirt haul paths
     wcRenderer.findTargetsAndDrawPaths(
-      pixels, PIXEL_RESOLUTION, wcRenderData, treeMask,
+      pixels, PIXEL_RESOLUTION, wcRenderData, treeResult.placedTrees,
       this._state.removedTrees, riverMask, seed,
     );
 

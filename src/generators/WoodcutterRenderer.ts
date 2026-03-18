@@ -10,6 +10,7 @@ import { mulberry32 } from './TopographyGenerator';
 import { packABGR } from './TerrainPalettes';
 import { Season } from '../state/Season';
 import type { WoodcutterState } from '../state/Building';
+import type { PlacedTree } from './TreeRenderer';
 
 // ── Cell types (matches StructureRenderer conventions) ──────────────────────
 const _ = 0;  // transparent
@@ -106,15 +107,15 @@ const PALETTE_SUMMER: WoodcutterPalette = {
 };
 
 const PALETTE_WINTER: WoodcutterPalette = {
-  wall:    [0x4a3520, 0x5c4430, 0x6e5340],
-  roof:    [0xc8c8d0, 0xd4d4dc, 0xe0e0e8],
-  stone:   [0x585058, 0x686068],
-  door:    0x3a2810,
+  wall:    [0x5a4530, 0x6c5440, 0x7e6350],  // slightly brighter walls vs snow
+  roof:    [0xb0b0b8, 0xc0c0c8, 0xd0d0d8],  // snow-covered but not pure white
+  stone:   [0x686068, 0x787078],
+  door:    0x4a3820,
   window:  0x3a78a8,
   chimney: [0x887070, 0x988080],
-  lumber:  [0x706040, 0x827250, 0x948460],
+  lumber:  [0x807050, 0x928260, 0xa49470],  // snow-dusted lumber
   wheel:   [0x5a4830, 0x6e5c3e],
-  dam:     [0x686068, 0x787078],
+  dam:     [0x787078, 0x888088],
 };
 
 function getPalette(season: Season): WoodcutterPalette {
@@ -135,8 +136,8 @@ export interface WoodcutterRenderData {
   // Chimney top position for smoke
   chimneyPx: number;
   chimneyPy: number;
-  // Target tree positions (for worker pathing and dirt trails)
-  targets: { px: number; py: number }[];
+  // Target trees (actual placed trees from TreeRenderer)
+  targets: PlacedTree[];
 }
 
 // ── Renderer ───────────────────────────────────────────────────────────────
@@ -228,11 +229,15 @@ export class WoodcutterRenderer {
    * Phase 2: find target trees and draw dirt haul paths.
    * Called after TreeRenderer so treeMask is available.
    */
+  /**
+   * Phase 2: find actual placed trees as targets and draw dirt haul paths.
+   * Called after TreeRenderer so placedTrees is available.
+   */
   findTargetsAndDrawPaths(
     pixels: Uint32Array,
     resolution: number,
     renderData: WoodcutterRenderData[],
-    treeMask: Uint8Array,
+    placedTrees: PlacedTree[],
     removedTrees: Set<number>,
     riverMask: Uint8Array | null,
     seed: number,
@@ -242,7 +247,7 @@ export class WoodcutterRenderer {
       const rng = mulberry32(seed ^ (rd.duchyIndex * 0x7e3a + 0xbeef + 0x1111));
       const numTargets = rd.variant === 'sawmill' ? 3 : 1;
       rd.targets = this._findTargetTrees(
-        rd.hutPx, rd.hutPy, numTargets, NN, treeMask, removedTrees, riverMask, rng,
+        rd.hutPx, rd.hutPy, numTargets, NN, placedTrees, removedTrees, riverMask, rng,
       );
       for (const t of rd.targets) {
         this._drawDirtPath(pixels, NN, rd.hutPx, rd.hutPy, t.px, t.py, riverMask);
@@ -250,52 +255,46 @@ export class WoodcutterRenderer {
     }
   }
 
-  // ── Find target trees (same side of river as hut) ────────────────────────
+  // ── Find actual placed trees near hut (same side of river) ───────────────
   private _findTargetTrees(
     hutPx: number, hutPy: number, count: number, NN: number,
-    treeMask: Uint8Array, removedTrees: Set<number>,
+    placedTrees: PlacedTree[], removedTrees: Set<number>,
     riverMask: Uint8Array | null, rng: () => number,
-  ): { px: number; py: number }[] {
-
-    // Collect candidate trees sorted by distance
-    const candidates: { px: number; py: number; dist: number }[] = [];
+  ): PlacedTree[] {
     const searchRadius = 45;
+    const minDist = 12;
 
-    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
-      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
-        const tx = hutPx + dx;
-        const ty = hutPy + dy;
-        if (tx < 0 || tx >= NN || ty < 0 || ty >= NN) continue;
-        const tIdx = ty * NN + tx;
-        if (!treeMask[tIdx]) continue;
-        if (removedTrees.has(tIdx)) continue;
-        const dist = dx * dx + dy * dy;
-        if (dist < 12 * 12) continue; // too close to clearing
-        if (dist > searchRadius * searchRadius) continue;
-        // Don't pick trees across a river
-        if (riverMask && this._pathCrossesRiver(hutPx, hutPy, tx, ty, riverMask, NN)) continue;
-        candidates.push({ px: tx, py: ty, dist });
-      }
+    // Filter to nearby trees not already removed and not across a river
+    const candidates: { tree: PlacedTree; dist: number }[] = [];
+    for (const tree of placedTrees) {
+      const dx = tree.px - hutPx;
+      const dy = tree.py - hutPy;
+      const dist = dx * dx + dy * dy;
+      if (dist < minDist * minDist || dist > searchRadius * searchRadius) continue;
+      // Already removed?
+      if (removedTrees.has(tree.py * NN + tree.px)) continue;
+      // Across river?
+      if (riverMask && this._pathCrossesRiver(hutPx, hutPy, tree.px, tree.py, riverMask, NN)) continue;
+      candidates.push({ tree, dist });
     }
 
     candidates.sort((a, b) => a.dist - b.dist);
 
-    // Pick from the nearest candidates with some randomness
-    const result: { px: number; py: number }[] = [];
+    // Pick from nearest with randomness, avoiding trees too close together
+    const result: PlacedTree[] = [];
     const used = new Set<number>();
     for (let i = 0; i < count && candidates.length > 0; i++) {
-      // Pick from top 5 nearest remaining
       const pool = candidates.filter((_, ci) => !used.has(ci)).slice(0, 5);
       if (pool.length === 0) break;
       const pick = pool[Math.floor(rng() * pool.length)];
-      result.push({ px: pick.px, py: pick.py });
-      // Remove picked and nearby candidates (don't pick two trees right next to each other)
+      result.push(pick.tree);
       const pickIdx = candidates.indexOf(pick);
       used.add(pickIdx);
+      // Don't pick two trees right next to each other
       for (let ci = 0; ci < candidates.length; ci++) {
         if (used.has(ci)) continue;
         const c = candidates[ci];
-        if ((c.px - pick.px) ** 2 + (c.py - pick.py) ** 2 < 8 * 8) used.add(ci);
+        if ((c.tree.px - pick.tree.px) ** 2 + (c.tree.py - pick.tree.py) ** 2 < 8 * 8) used.add(ci);
       }
     }
 

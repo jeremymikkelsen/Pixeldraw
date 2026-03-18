@@ -19,6 +19,7 @@ import { Season } from '../state/Season';
 import type { WoodcutterRenderData } from './WoodcutterRenderer';
 import { WHEEL_FRAMES, WHEEL_SIZE, WH } from './WoodcutterRenderer';
 import type { GameState } from '../state/GameState';
+import type { PlacedTree } from './TreeRenderer';
 
 // ── Person sprite (same as GardenWorkerAnimator) ───────────────────────────
 const PERSON_HEAD = packABGR(0xc8, 0xa8, 0x80);
@@ -228,11 +229,11 @@ export class WoodcutterAnimator {
     const cycleIdx = Math.floor(globalT / cycleDur) % numTargets;
     const t = (globalT % cycleDur) / cycleDur;
 
-    const target = w.data.targets[cycleIdx % numTargets];
+    const tree = w.data.targets[cycleIdx % numTargets];
     const hx = w.data.hutPx;
     const hy = w.data.hutPy;
-    const tx = target.px;
-    const ty = target.py;
+    const tx = tree.px;
+    const ty = tree.py;
 
     let wx: number, wy: number;
     let facingRight: boolean;
@@ -270,18 +271,18 @@ export class WoodcutterAnimator {
       wy = ty;
       facingRight = tx > hx;
 
-      // Animate falling tree: trunk pixels tip from vertical to horizontal
+      // Animate the actual tree sprite falling (rotating from vertical to horizontal)
       const fallProgress = (t - CHOP_END) / (TREE_FALL_END - CHOP_END);
-      this._drawFallingTree(pixels, N, ext, tx, ty, fallProgress, tx > hx);
+      this._drawFallingTree(pixels, N, ext, tree, fallProgress, tx > hx);
     } else if (t < WORK_TREE_END) {
       // Workers process the fallen tree (standing at downed trunk)
-      const trunkX = tx + (tx > hx ? 2 : -2);
+      const trunkX = tx + (tx > hx ? 3 : -3);
       wx = trunkX;
       wy = ty + 1;
       facingRight = tx > hx;
 
-      // Draw the downed trunk on the ground
-      this._drawDownedTrunk(pixels, N, ext, tx, ty, tx > hx);
+      // Draw the actual tree sprite lying on the ground
+      this._drawDownedTree(pixels, N, ext, tree, tx > hx);
 
       // Second worker (offset slightly)
       this._stampPerson(pixels, N, ext, trunkX + (tx > hx ? 2 : -2), ty + 1,
@@ -336,44 +337,89 @@ export class WoodcutterAnimator {
     }
   }
 
-  // ── Draw a tree falling from vertical to horizontal ──────────────────────
+  // ── Draw actual tree sprite falling from vertical to horizontal ──────────
   private _drawFallingTree(
     pixels: Uint32Array, N: number, ext: Int16Array | null,
-    tx: number, ty: number, progress: number, fallsRight: boolean,
+    tree: PlacedTree, progress: number, fallsRight: boolean,
   ): void {
-    // Tree trunk: 5px tall, tilting to horizontal
-    const trunkLen = 5;
+    const { w, h, data, flipped, canopyColors, trunkColors } = tree;
     const angle = progress * Math.PI / 2; // 0 = vertical, PI/2 = horizontal
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const dir = fallsRight ? 1 : -1;
 
-    for (let i = 0; i < trunkLen; i++) {
-      const dist = i + 1;
-      const px = Math.round(tx + Math.sin(angle) * dist * (fallsRight ? 1 : -1));
-      const py = Math.round(ty - Math.cos(angle) * dist);
-      if (px < 0 || px >= N || py < 0 || py >= N) continue;
+    // Tree origin: trunk base at (tree.px, tree.py), sprite extends upward
+    for (let sy = 0; sy < h; sy++) {
+      for (let sx = 0; sx < w; sx++) {
+        const srcX = flipped ? (w - 1 - sx) : sx;
+        const cell = data[sy * w + srcX];
+        if (cell === 0) continue;
 
-      const srcIdx = py * N + px;
-      const screenIdx = this._screenIdx(srcIdx, N, ext);
-      if (screenIdx < 0) continue;
-      this._saveDirty(pixels, screenIdx);
-      pixels[screenIdx] = i < 2 ? TRUNK_DARK : TRUNK_COLOR;
+        // Original offset from trunk base
+        const ox = sx - Math.floor(w / 2);
+        const oy = -(h - 1 - sy); // negative = upward
+
+        // Rotate around trunk base: pivot at (0,0)
+        const rx = Math.round(ox + oy * sinA * dir);
+        const ry = Math.round(oy * cosA);
+
+        const px = tree.px + rx;
+        const py = tree.py + ry;
+        if (px < 0 || px >= N || py < 0 || py >= N) continue;
+
+        const srcIdx = py * N + px;
+        const screenIdx = this._screenIdx(srcIdx, N, ext);
+        if (screenIdx < 0) continue;
+
+        this._saveDirty(pixels, screenIdx);
+
+        // Use actual tree colors
+        if (cell === 1) { // trunk
+          pixels[screenIdx] = trunkColors[0] ?? TRUNK_COLOR;
+        } else { // canopy
+          pixels[screenIdx] = canopyColors[2] ?? canopyColors[0] ?? TRUNK_COLOR;
+        }
+      }
     }
   }
 
-  // ── Draw a downed trunk lying on the ground ──────────────────────────────
-  private _drawDownedTrunk(
+  // ── Draw actual tree sprite lying on the ground (90° rotated) ────────────
+  private _drawDownedTree(
     pixels: Uint32Array, N: number, ext: Int16Array | null,
-    tx: number, ty: number, liesRight: boolean,
+    tree: PlacedTree, liesRight: boolean,
   ): void {
-    // Horizontal trunk on ground: 4px long
-    for (let i = 0; i < 4; i++) {
-      const px = tx + (liesRight ? i : -i);
-      const py = ty;
-      if (px < 0 || px >= N || py < 0 || py >= N) continue;
-      const srcIdx = py * N + px;
-      const screenIdx = this._screenIdx(srcIdx, N, ext);
-      if (screenIdx < 0) continue;
-      this._saveDirty(pixels, screenIdx);
-      pixels[screenIdx] = i < 1 ? TRUNK_DARK : TRUNK_COLOR;
+    const { w, h, data, flipped, canopyColors, trunkColors } = tree;
+    const dir = liesRight ? 1 : -1;
+
+    for (let sy = 0; sy < h; sy++) {
+      for (let sx = 0; sx < w; sx++) {
+        const srcX = flipped ? (w - 1 - sx) : sx;
+        const cell = data[sy * w + srcX];
+        if (cell === 0) continue;
+
+        const ox = sx - Math.floor(w / 2);
+        const oy = -(h - 1 - sy);
+
+        // Fully rotated 90°: vertical becomes horizontal
+        const rx = Math.round(oy * dir);
+        const ry = Math.round(ox);
+
+        const px = tree.px + rx;
+        const py = tree.py + ry;
+        if (px < 0 || px >= N || py < 0 || py >= N) continue;
+
+        const srcIdx = py * N + px;
+        const screenIdx = this._screenIdx(srcIdx, N, ext);
+        if (screenIdx < 0) continue;
+
+        this._saveDirty(pixels, screenIdx);
+
+        if (cell === 1) {
+          pixels[screenIdx] = trunkColors[0] ?? TRUNK_COLOR;
+        } else {
+          pixels[screenIdx] = canopyColors[2] ?? canopyColors[0] ?? TRUNK_COLOR;
+        }
+      }
     }
   }
 

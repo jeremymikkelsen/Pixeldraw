@@ -449,6 +449,25 @@ interface TreeInstance {
   season: Season;
 }
 
+/** Placed tree data exposed for other systems (e.g. woodcutter targeting) */
+export interface PlacedTree {
+  px: number;       // trunk base pixel x
+  py: number;       // trunk base pixel y
+  w: number;        // sprite width
+  h: number;        // sprite height
+  data: number[];   // sprite cell data (0=transparent, 1=trunk, 2=canopy)
+  canopyColors: number[];  // 5 ABGR canopy shade colors
+  trunkColors: number[];   // 2 ABGR trunk colors [light, dark]
+  flipped: boolean;
+  isConifer: boolean;
+}
+
+/** Render result from TreeRenderer */
+export interface TreeRenderResult {
+  treeMask: Uint8Array;
+  placedTrees: PlacedTree[];
+}
+
 // ---------------------------------------------------------------------------
 // TreeRenderer
 // ---------------------------------------------------------------------------
@@ -463,7 +482,7 @@ export class TreeRenderer {
     season: Season = Season.Summer,
     structureMask?: Uint8Array,
     removedTrees?: Set<number>,
-  ): Uint8Array {
+  ): TreeRenderResult {
     const rng = mulberry32(seed ^ 0x7ee0000);
     const N = resolution;
     const scale = topo.size / N;
@@ -642,7 +661,34 @@ export class TreeRenderer {
       this._stampSprite(pixels, N, tree, treeMask);
     }
 
-    return treeMask;
+    // Build placed tree data for external systems (woodcutter targeting)
+    const placedTrees: PlacedTree[] = trees.map(t => {
+      const canopyColors = t.palette.canopy.map(c => {
+        const r = (c >> 16) & 0xff;
+        const g = (c >> 8) & 0xff;
+        const b = c & 0xff;
+        return packABGR(r, g, b);
+      });
+      const trunkColors = t.palette.trunk.map(c => {
+        const r = (c >> 16) & 0xff;
+        const g = (c >> 8) & 0xff;
+        const b = c & 0xff;
+        return packABGR(r, g, b);
+      });
+      return {
+        px: t.px,
+        py: t.py,
+        w: t.template.w,
+        h: t.template.h,
+        data: t.template.data,
+        canopyColors,
+        trunkColors,
+        flipped: t.flipped,
+        isConifer: t.isConifer,
+      };
+    });
+
+    return { treeMask, placedTrees };
   }
 
   // -----------------------------------------------------------------------

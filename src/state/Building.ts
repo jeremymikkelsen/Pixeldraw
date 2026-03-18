@@ -88,6 +88,20 @@ export interface BuildingInstance {
   duchyIndex: number;   // which duchy owns it
 }
 
+// ─── Fishing Camp state ─────────────────────────────────────────────────────
+
+export interface FishingCampState {
+  regionIndex: number;
+  duchyIndex: number;
+  variant: 'ocean' | 'river';
+  hutPx: number;      // processing hut center (pixel space)
+  hutPy: number;
+  dockPx: number;     // far end of dock/wharf (in or near water)
+  dockPy: number;
+  waterDirX: number;  // unit vector from hut toward water
+  waterDirY: number;
+}
+
 // ─── Woodcutter / Sawmill state ─────────────────────────────────────────────
 
 export interface WoodcutterState {

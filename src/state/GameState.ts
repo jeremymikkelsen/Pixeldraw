@@ -12,6 +12,7 @@ import { generateRoads, RoadSegment } from '../generators/RoadGenerator';
 import { DuchyEconomy, createDuchyEconomy, processEconomyTurn, countTerrain } from './Economy';
 import type { SaveData } from './SaveLoad';
 import { AgImprovementType, assignAgImprovements } from './AgImprovements';
+import { KingData, selectKing } from './King';
 
 export interface GameState {
   seed: number;
@@ -28,6 +29,7 @@ export interface GameState {
   // Political
   duchies: Duchy[];
   regionToDuchy: Int8Array;
+  king: KingData;
 
   // Infrastructure
   roads: RoadSegment[];
@@ -49,6 +51,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
   const { duchies, regionToDuchy } = generateDuchies(topo, hydro, seed);
   const roads = generateRoads(topo, hydro, duchies);
   const agImprovements = assignAgImprovements(topo, hydro, duchies, seed);
+  const king = selectKing(seed);
 
   // Initialize economies for each duchy
   const economies = duchies.map(() => createDuchyEconomy(50));
@@ -64,6 +67,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
     hydro,
     duchies,
     regionToDuchy,
+    king,
     roads,
     agImprovements,
     economies,
@@ -80,6 +84,7 @@ export function loadGameState(save: SaveData): GameState {
   const { duchies, regionToDuchy } = generateDuchies(topo, hydro, save.seed);
   const roads = generateRoads(topo, hydro, duchies);
   const agImprovements = assignAgImprovements(topo, hydro, duchies, save.seed);
+  const king = selectKing(save.seed);
 
   return {
     seed: save.seed,
@@ -92,6 +97,7 @@ export function loadGameState(save: SaveData): GameState {
     hydro,
     duchies,
     regionToDuchy,
+    king,
     roads,
     agImprovements,
     economies: save.economies,

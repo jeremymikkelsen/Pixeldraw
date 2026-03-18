@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { useUIStore } from '../../store/uiStore';
 import { seasonName } from '../../state/Season';
@@ -39,6 +40,36 @@ function ShieldCrest({ color, initial }: { color: string; initial: string }) {
   );
 }
 
+function KingButton() {
+  const { king, playerEconomy } = useGameStore();
+  const { setOpenPanel } = useUIStore();
+  const [imgFailed, setImgFailed] = useState(false);
+
+  if (!king) return null;
+
+  const favor = playerEconomy?.kingsFavor ?? 50;
+  const favorColor = favor >= 60 ? '#4a8' : favor >= 30 ? '#ca0' : '#c44';
+
+  return (
+    <button className="hud-king-btn" onClick={() => setOpenPanel('king')} title={`${king.name} ${king.title}`}>
+      {!imgFailed ? (
+        <img
+          className="hud-king-portrait"
+          src={king.portraitUrl}
+          alt={king.name}
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span className="hud-king-fallback">👑</span>
+      )}
+      <div className="hud-king-text">
+        <span className="hud-king-name">{king.name}</span>
+        <span className="hud-king-favor" style={{ color: favorColor }}>Favor: {favor}</span>
+      </div>
+    </button>
+  );
+}
+
 export function GameHUD() {
   const { playerHouse, playerDuchy, playerEconomy, season, year, zoom, onEndTurn } = useGameStore();
   const { setOpenPanel } = useUIStore();
@@ -53,6 +84,9 @@ export function GameHUD() {
 
   return (
     <div className="hud-bar">
+      {/* King */}
+      <KingButton />
+
       {/* House identity */}
       <button className="hud-house-btn" onClick={() => setOpenPanel('duchy')} title="Open Duchy Panel">
         <ShieldCrest color={colorHex} initial={initial} />
@@ -78,7 +112,7 @@ export function GameHUD() {
           <span>🪨 {resources.stone}</span>
           <span>⚙️ {resources.iron}</span>
         </span>
-        <span>💰 {resources.gold}</span>
+        <span className="hud-clickable" onClick={() => setOpenPanel('market')}>💰 {resources.gold}</span>
         <span className="hud-clickable" onClick={() => setOpenPanel('population')}>👥 {population.total}</span>
       </div>
 

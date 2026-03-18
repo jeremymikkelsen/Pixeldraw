@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import type { GameState } from '../state/GameState';
 import type { Duchy, HouseData } from '../state/Duchy';
 import type { Season } from '../state/Season';
+import type { KingData } from '../state/King';
 import type { DuchyEconomy, RationLevel, DevelopmentMode, ResourceType, LaborAssignment } from '../state/Economy';
 import { saveGame as persistSave, loadGame as loadSave, hasSavedGame, deleteSave, type SaveData } from '../state/SaveLoad';
 
@@ -22,6 +23,7 @@ export interface GameStoreState {
   season: Season | null;
   year: number;
   zoom: number;
+  king: KingData | null;
 
   // Save state
   hasSave: boolean;
@@ -62,6 +64,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   season: null,
   year: 1,
   zoom: 1,
+  king: null,
   hasSave: hasSavedGame(),
   onEndTurn: null,
   onNewGame: null,
@@ -78,6 +81,7 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       playerEconomy,
       season: gameState.season,
       year: gameState.year,
+      king: gameState.king,
     });
   },
 

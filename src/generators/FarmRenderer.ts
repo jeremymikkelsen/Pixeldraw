@@ -19,7 +19,6 @@ import { Season } from '../state/Season';
 import type { AgImprovementType } from '../state/AgImprovements';
 
 const GRAIN_BRIGHTNESS = 1.25;
-const VEGGIE_BRIGHTNESS = 1.25;
 
 // ── Veggie field palettes ─────────────────────────────────────────────────────
 
@@ -30,30 +29,18 @@ const VEGGIE_SOIL = {
   [Season.Fall]: packABGR(0x52, 0x3c, 0x20),
 };
 
-// 3 crop types × 4 seasons — each entry: [shadow, highlight] (RGB hex)
-// Type 0: Leafy greens (brassica/lettuce)
-// Type 1: Root veg / carrot tops (wispy green → orange autumn)
-// Type 2: Flowers / poppies (green → red)
-const CROP: Record<number, Record<Season, [number, number]>> = {
-  0: {
-    [Season.Winter]: [0x685848, 0x685848],
-    [Season.Spring]: [0x225220, 0x327830],
-    [Season.Summer]: [0x1c4a1c, 0x2e722c],
-    [Season.Fall]: [0x5a6c10, 0x809820],
-  },
-  1: {
-    [Season.Winter]: [0x685848, 0x685848],
-    [Season.Spring]: [0x487828, 0x68a038],
-    [Season.Summer]: [0x487828, 0x68a038],
-    [Season.Fall]: [0x904010, 0xd87020],
-  },
-  2: {
-    [Season.Winter]: [0x685848, 0x685848],
-    [Season.Spring]: [0x286020, 0x3a8828],
-    [Season.Summer]: [0x801812, 0xcc2818],
-    [Season.Fall]: [0x781810, 0xb82014],
-  },
-};
+// Per-crop-type leaf color pairs (shadow, highlight) — Spring and Summer
+// Fall/Winter use inline values for vines/snow
+const LEAF_SPRING: [number, number][] = [
+  [0x2a5c18, 0x3e8026],  // 0: leafy greens
+  [0x3a7020, 0x509430],  // 1: root-veg tops
+  [0x266018, 0x3a8828],  // 2: broad-leaf
+];
+const LEAF_SUMMER: [number, number][] = [
+  [0x1e5a18, 0x389030],  // 0: dark lush
+  [0x3a7820, 0x58a030],  // 1: medium green
+  [0x286820, 0x4a9428],  // 2: rich green
+];
 
 // ── Pasture palettes ──────────────────────────────────────────────────────────
 // A and B are kept close together so the noise variation reads as a uniform
@@ -176,6 +163,26 @@ export class FarmRenderer {
       }
     }
 
+    // Precompute pumpkin centers for fall veggie regions (2–3 per region)
+    const veggiePumpkins = new Map<number, { cx: number; cy: number }[]>();
+    if (season === Season.Fall) {
+      for (const [r, m] of meta) {
+        if (improvements.get(r) !== 'veggie') continue;
+        const rng3 = mulberry32(seed ^ (r * 0xb7c3d5) ^ 0xf00d);
+        const count = 2 + (rng3() > 0.5 ? 1 : 0);
+        const W = m.maxX - m.minX;
+        const H = m.maxY - m.minY;
+        const centers: { cx: number; cy: number }[] = [];
+        for (let k = 0; k < count; k++) {
+          centers.push({
+            cx: Math.round(m.minX + (0.15 + rng3() * 0.70) * W),
+            cy: Math.round(m.minY + (0.15 + rng3() * 0.70) * H),
+          });
+        }
+        veggiePumpkins.set(r, centers);
+      }
+    }
+
     // Allocate mask
     this.farmMask = new Uint8Array(N * N);
     this.pastures = [];
@@ -212,7 +219,8 @@ export class FarmRenderer {
           break;
         case 'veggie': {
           const crops = veggieCrops.get(r)!;
-          pixels[i] = this._veggiePixel(px, py, m, crops, season, noise);
+          const pumpkins = veggiePumpkins.get(r);
+          pixels[i] = this._veggiePixel(px, py, m, crops, season, noise, pumpkins);
           break;
         }
         case 'pasture': {
@@ -288,38 +296,91 @@ export class FarmRenderer {
     crops: [number, number, number],
     season: Season,
     noise: (x: number, y: number) => number,
+    pumpkins?: { cx: number; cy: number }[],
   ): number {
-    // Divide bbox into 3 horizontal (or vertical) strips
+    // Divide bbox into 3 strips, boundaries blurred by low-freq noise
     const W = m.maxX - m.minX || 1;
     const H = m.maxY - m.minY || 1;
     const isHoriz = W >= H;
+    const stripBlur = noise(px * 0.08, py * 0.08) * 0.07;
 
     let stripIdx: number;
     if (isHoriz) {
-      const relX = (px - m.minX) / W;
-      stripIdx = relX < 0.38 ? 0 : relX < 0.68 ? 1 : 2;
+      const rel = (px - m.minX) / W + stripBlur;
+      stripIdx = rel < 0.38 ? 0 : rel < 0.68 ? 1 : 2;
     } else {
-      const relY = (py - m.minY) / H;
-      stripIdx = relY < 0.38 ? 0 : relY < 0.68 ? 1 : 2;
+      const rel = (py - m.minY) / H + stripBlur;
+      stripIdx = rel < 0.38 ? 0 : rel < 0.68 ? 1 : 2;
     }
 
     const cropType = crops[stripIdx];
     const soil = VEGGIE_SOIL[season];
 
-    if (season === Season.Winter) return soil;
+    // ── Winter: snow mounds + bare stems ────────────────────────────────────
+    if (season === Season.Winter) {
+      const snowN = noise(px * 0.28 + 100, py * 0.28);
+      if (snowN > 0.20) {
+        const sn2 = noise(px * 0.55 + 200, py * 0.55);
+        return applyBrightness(sn2 > 0 ? 0xdce8f0 : 0xc8d8e8, 1.0);
+      }
+      // Rare bare stem pixel
+      if (noise(px * 0.9 + 50, py * 0.9 + 50) > 0.82) {
+        return applyBrightness(0x3c2a18, 1.0);
+      }
+      return soil;
+    }
 
-    // Dot pattern: plant appears at regular intervals
-    // Different offsets per crop type to break monotony
-    const dotX = (px + cropType * 3) % 4;
-    const dotY = (py + cropType * 2) % 4;
-    const isDot = dotX < 2 && dotY < 2;
+    // ── Fall: vine tendrils + leaf clusters + pumpkins ──────────────────────
+    if (season === Season.Fall) {
+      // Pumpkins: radius-2 blobs at precomputed centers
+      if (pumpkins) {
+        for (const { cx, cy } of pumpkins) {
+          const dx = px - cx, dy = py - cy;
+          if (dx * dx + dy * dy <= 4) {
+            return applyBrightness(dy < 0 ? 0xc05810 : 0xe07018, 1.0);
+          }
+        }
+      }
+      // Vine tendril: thin isoline of medium-freq noise
+      const vineN = noise(px * 0.22 + cropType * 5.3, py * 0.22);
+      const isVine = Math.abs(vineN) < 0.12;
+      // Leaf blob: small high-freq clusters
+      const leafN = noise(px * 0.46 + cropType * 3.7, py * 0.46);
+      const isLeaf = leafN > 0.30;
+      if (isVine || isLeaf) {
+        // Red accent (~4% of plant pixels, summer+fall only)
+        if (noise(px * 1.8 + 31, py * 1.8 + 31) > 0.84) {
+          return applyBrightness(0x981410, 1.0);
+        }
+        const shade = noise(px * 0.75 + 5, py * 0.75);
+        return applyBrightness(shade > 0.1 ? 0x3a6c18 : 0x285010, 1.0);
+      }
+      return soil;
+    }
 
-    if (!isDot) return soil;
+    // ── Spring: dense small organic leaf clusters ────────────────────────────
+    if (season === Season.Spring) {
+      const plantN = noise(px * 0.47 + cropType * 4.1, py * 0.47);
+      if (plantN > 0.04) {
+        const shade = noise(px * 0.82 + 11, py * 0.82 + 11);
+        const [shadow, highlight] = LEAF_SPRING[cropType];
+        return applyBrightness(shade > 0.15 ? highlight : shadow, 1.0);
+      }
+      return soil;
+    }
 
-    // Noise for shade variation within dots
-    const n = (noise(px * 0.3, py * 0.3) + 1) / 2;
-    const [shadow, highlight] = CROP[cropType][season];
-    return applyBrightness(n > 0.5 ? highlight : shadow, VEGGIE_BRIGHTNESS);
+    // ── Summer: lush larger blobs + red accents ──────────────────────────────
+    const plantN = noise(px * 0.38 + cropType * 3.9, py * 0.38);
+    if (plantN > -0.06) {
+      // Red accent (~4% of plant pixels)
+      if (noise(px * 1.7 + 22, py * 1.7 + 22) > 0.84) {
+        return applyBrightness(0x8c1210, 1.0);
+      }
+      const shade = noise(px * 0.72 + 17, py * 0.72);
+      const [shadow, highlight] = LEAF_SUMMER[cropType];
+      return applyBrightness(shade > 0.15 ? highlight : shadow, 1.0);
+    }
+    return soil;
   }
 
   // ── Pasture pixel ───────────────────────────────────────────────────────────

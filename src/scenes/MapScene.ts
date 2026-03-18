@@ -964,7 +964,23 @@ export class MapScene extends Phaser.Scene {
       .map(([k, v]) => `  ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`)
       .join('\n');
 
-    banner.textContent = `RENDERER CRASH — ${title}\n${timestamp}\n${entries}`;
+    // Close button (top-right corner)
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.title = 'Dismiss';
+    closeBtn.style.cssText = `
+      position:absolute; top:8px; right:10px;
+      background:none; border:none; color:rgba(255,255,255,0.7);
+      font-size:16px; cursor:pointer; line-height:1; padding:0;
+    `;
+    closeBtn.addEventListener('click', () => this._removeCrashBanner());
+    banner.style.position = 'fixed';  // ensure absolute child is relative to banner
+    banner.style.paddingRight = '36px';
+    banner.appendChild(closeBtn);
+
+    const text = document.createElement('div');
+    text.textContent = `RENDERER CRASH — ${title}\n${timestamp}\n${entries}`;
+    banner.appendChild(text);
 
     // Copy button
     const copyBtn = document.createElement('button');
@@ -976,7 +992,7 @@ export class MapScene extends Phaser.Scene {
       cursor:pointer;
     `;
     copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(banner.textContent ?? '').then(() => {
+      navigator.clipboard.writeText(text.textContent ?? '').then(() => {
         copyBtn.textContent = 'Copied!';
         setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
       });

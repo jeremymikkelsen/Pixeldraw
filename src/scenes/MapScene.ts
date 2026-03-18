@@ -59,6 +59,7 @@ export class MapScene extends Phaser.Scene {
   private _riverAnimator!: RiverAnimator;
   private _coastalRenderer!: CoastalRenderer;
   private _pastureAnimator: PastureAnimator | null = null;
+  private _deerAnimator: DeerAnimator | null = null;
   private _duchyBorderPixels: { idx: number; color: number }[] = [];
   private _fenceFrontPixels: { idx: number; color: number }[] = [];
 
@@ -467,6 +468,9 @@ export class MapScene extends Phaser.Scene {
         if (this._pastureAnimator) {
           this._pastureAnimator.animate(this._pixels, time);
         }
+        if (this._deerAnimator) {
+          this._deerAnimator.animate(this._pixels, time);
+        }
         // Restore front fence above cows (bottom fence in 3/4 view)
         for (const fp of this._fenceFrontPixels) {
           this._pixels[fp.idx] = fp.color;
@@ -865,6 +869,18 @@ export class MapScene extends Phaser.Scene {
       this._pastureAnimator = pa;
     } else {
       this._pastureAnimator = null;
+    }
+
+    // Deer animator (deer peek through dense forests)
+    if (renderer.regionGrid) {
+      const da = new DeerAnimator(
+        renderer.regionGrid, treeMask, pixels, PIXEL_RESOLUTION,
+        topo.mesh.numRegions, seed, season,
+      );
+      da.extrusionMap = mountainRenderer.extrusionMap;
+      this._deerAnimator = da;
+    } else {
+      this._deerAnimator = null;
     }
 
     // Store refs

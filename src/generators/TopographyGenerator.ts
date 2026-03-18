@@ -219,7 +219,6 @@ export class TopographyGenerator {
       const e = this.elevation[r];
       if (e < 0.05)      terrain[r] = 'ocean';
       else if (e < 0.08) terrain[r] = 'water';
-      else if (e < 0.12) terrain[r] = 'coast';
       else if (e < 0.25) terrain[r] = 'lowland';
       else if (e < 0.45) terrain[r] = 'highland';
       else if (e < 0.65) terrain[r] = 'rock';

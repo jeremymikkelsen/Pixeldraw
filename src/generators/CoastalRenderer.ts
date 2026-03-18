@@ -360,9 +360,11 @@ export class CoastalRenderer {
     for (let i = 0; i < this._animatedPixels.length; i++) {
       const cp = this._animatedPixels[i];
 
-      // Remap to extruded screen position
+      // Remap to extruded screen position (skip for near-shore pixels —
+      // they're at sea level so extrusion is 0, and remapping can cause
+      // extruded highland pixels to overwrite coastal animation)
       let outIdx = cp.idx;
-      if (ext) {
+      if (ext && cp.type !== 'shorewave') {
         const px = cp.idx % N;
         const py = (cp.idx - px) / N;
         const screenY = py - ext[cp.idx];

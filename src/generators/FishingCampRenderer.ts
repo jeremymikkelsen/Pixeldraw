@@ -182,8 +182,8 @@ export class FishingCampRenderer {
       const perpX = -waterDirY;
       const perpY =  waterDirX;
       for (const side of [-1, 1]) {
-        const rx = Math.round(hutPx + perpX * 9 * side + waterDirX * (-5));
-        const ry = Math.round(hutPy + perpY * 9 * side + waterDirY * (-5));
+        const rx = Math.round(hutPx + perpX * 6 * side + waterDirX * (-5));
+        const ry = Math.round(hutPy + perpY * 6 * side + waterDirY * (-5));
         this._stampRack(pixels, NN, rx, ry, palette, mask);
       }
 

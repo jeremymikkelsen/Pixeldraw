@@ -29,16 +29,28 @@ export function assignFishingCamps(
     const duchy = duchies[di];
     const rng = mulberry32(seed ^ (duchy.id * 0x5e3f9c + 0x0000f001));
 
-    // Ocean candidates: coast regions that directly border ocean or water
-    const oceanCandidates = duchy.regions.filter(r => {
-      if (r === duchy.capitalRegion) return false;
-      if (topo.terrainType[r] !== 'coast') return false;
-      if (!adj[r]) return false;
-      return adj[r].some(n => {
+    // Ocean candidates: any land region bordering water or ocean.
+    // The shallow ocean edge is 'water' type, so we check for both.
+    // Prefer coast-typed regions first; fall back to lowland/highland if needed.
+    const isWaterAdjacent = (r: number) =>
+      !!adj[r] && adj[r].some(n => {
         const t = topo.terrainType[n];
         return t === 'ocean' || t === 'water';
       });
+
+    const coastBorderCandidates = duchy.regions.filter(r => {
+      if (r === duchy.capitalRegion) return false;
+      return topo.terrainType[r] === 'coast' && isWaterAdjacent(r);
     });
+    const anyBorderCandidates = duchy.regions.filter(r => {
+      if (r === duchy.capitalRegion) return false;
+      const t = topo.terrainType[r];
+      if (t === 'ocean' || t === 'water' || t === 'rock' || t === 'cliff') return false;
+      return isWaterAdjacent(r);
+    });
+    const oceanCandidates = coastBorderCandidates.length > 0
+      ? coastBorderCandidates
+      : anyBorderCandidates;
 
     // River candidates: land regions on or directly adjacent to a big river
     const riverCandidates = duchy.regions.filter(r => {

@@ -417,49 +417,41 @@ export class CoastalRenderer {
       } else if (cp.type === 'shorewave') {
         // Rolling shore waves with swells building into breaking surf.
         // dist=0 is at the shore, higher dist = further out to sea.
-        // The wave front sweeps from far out (WAVE_RANGE) toward shore (0),
-        // then recedes back out.
         const WAVE_RANGE = 10;
+        const SAND_ZONE = 3;
         const cycle = timeSec * 0.4 + cp.phase;
         const waveDist = ((Math.sin(cycle) + 1) / 2) * WAVE_RANGE;
         const distToFront = cp.dist - waveDist;
-        const absDist = Math.abs(distToFront);
 
-        if (absDist < 1.8) {
-          // Foam/crest band — brighter and wider near shore (breaking wave)
-          const foamWidth = cp.dist < 3 ? 1.8 : 1.2;
-          if (absDist < foamWidth) {
-            const bright = absDist < foamWidth * 0.4;
+        if (cp.dist <= SAND_ZONE) {
+          // Sand zone: white foam in broken segments, wet sand when wave recedes.
+          // Use phase to create gaps — only ~60% of coastline shows foam at once.
+          const segmentNoise = Math.sin(cp.phase * 3.7) * Math.cos(cp.phase * 2.1 + timeSec * 0.15);
+          const showFoam = segmentNoise > -0.2;
+
+          if (showFoam && Math.abs(distToFront) < 1.5) {
+            const bright = Math.abs(distToFront) < 0.5;
             pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
-          } else {
-            pixels[outIdx] = this._baseColors.get(cp.idx)!;
-          }
-        } else if (distToFront < 0) {
-          // Shore side of wave (wave has passed this point heading to shore)
-          if (cp.dist <= 3) {
-            // Over sand zone: expose wet sand when wave recedes
+          } else if (distToFront < 0) {
             pixels[outIdx] = WET_SAND_BY_SEASON[this._season];
           } else {
-            // Open water: show trough (slightly darker base)
             pixels[outIdx] = this._baseColors.get(cp.idx)!;
           }
         } else {
-          // Ocean side of wave: swell — subtle brightening as water rises
-          // before the crest arrives
-          const swellFactor = Math.max(0, 1.0 - distToFront / 4);
-          if (swellFactor > 0.1) {
-            const base = this._baseColors.get(cp.idx)!;
-            // Lighten water slightly to show the swell rising
+          // Open water: swells only — no white foam, just subtle water rise/fall
+          const base = this._baseColors.get(cp.idx)!;
+          const swellFactor = Math.max(0, 1.0 - Math.abs(distToFront) / 3);
+          if (swellFactor > 0.05) {
             const r = base & 0xff;
             const g = (base >> 8) & 0xff;
             const b = (base >> 16) & 0xff;
-            const lift = Math.floor(swellFactor * 25);
+            const lift = Math.floor(swellFactor * 20);
             const sr = Math.min(255, r + lift);
             const sg = Math.min(255, g + lift + Math.floor(lift * 0.3));
             const sb = Math.min(255, b + lift + Math.floor(lift * 0.5));
             pixels[outIdx] = (255 << 24) | (sb << 16) | (sg << 8) | sr;
           } else {
-            pixels[outIdx] = this._baseColors.get(cp.idx)!;
+            pixels[outIdx] = base;
           }
         }
       }

@@ -433,9 +433,11 @@ export class CoastalRenderer {
             const bright = Math.abs(distToFront) < 0.5;
             pixels[outIdx] = bright ? colors.waveBright : colors.waveFoam;
           } else if (distToFront < 0) {
+            // Shore side of wave: wet sand exposed
             pixels[outIdx] = WET_SAND_BY_SEASON[this._season];
           } else {
-            pixels[outIdx] = this._baseColors.get(cp.idx)!;
+            // Ocean side of wave: show water, never sand
+            pixels[outIdx] = colors.sparkleDim;
           }
         } else {
           // Open water: swells only — no white foam, just subtle water rise/fall

@@ -858,7 +858,7 @@ export class MapScene extends Phaser.Scene {
     // Fishing camps — dock/wharf, hut, racks, static fishermen (before trees so clearing works)
     const fishingRenderer = new FishingCampRenderer();
     const { campMask, renderData: fishRenderData } = fishingRenderer.render(
-      pixels, PIXEL_RESOLUTION, this._state.fishingCamps, season, riverMask,
+      pixels, PIXEL_RESOLUTION, this._state.fishingCamps, season, riverMask, renderer.regionGrid,
     );
     // Merge camp mask into structureMask so trees avoid the camp area
     for (let i = 0; i < campMask.length; i++) {

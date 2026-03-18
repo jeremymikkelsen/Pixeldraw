@@ -13,6 +13,14 @@ import { packABGR } from './TerrainPalettes';
 import { Season } from '../state/Season';
 import type { FishingCampState } from '../state/Building';
 
+// ── Seasonal dirt palette (matches FarmRenderer field-dirt look) ─────────────
+const DIRT_COLOR: Record<Season, number> = {
+  [Season.Winter]: packABGR(0x7a, 0x6a, 0x5a),
+  [Season.Spring]: packABGR(0x56, 0x3c, 0x20),
+  [Season.Summer]: packABGR(0x50, 0x38, 0x1c),
+  [Season.Fall]:   packABGR(0x5c, 0x40, 0x22),
+};
+
 // ── Cell type tokens ─────────────────────────────────────────────────────────
 const _ = 0;
 const W = 1;   // wall (wood)
@@ -67,7 +75,6 @@ interface FishingPalette {
   rack:    number[];
   fish:    number[];
   plank:   number[];
-  dirt:    number;
   boat:    number[];
   person:  number;
   leg:     number;
@@ -84,7 +91,6 @@ const PALETTE_SUMMER: FishingPalette = {
   rack:    [0x6e4820, 0x5a3a18],
   fish:    [0xc0785c, 0xa86040],
   plank:   [0x8a7040, 0x9c8250, 0x7a6030],
-  dirt:    0x7a6850,
   boat:    [0x3a2810, 0x5a4030, 0x7a5840],
   person:  0x5c7840,  // generic worker color
   leg:     0x5a4838,
@@ -101,7 +107,6 @@ const PALETTE_WINTER: FishingPalette = {
   rack:    [0x4a3010, 0x3a2408],
   fish:    [0xa06848, 0x885030],
   plank:   [0x706030, 0x826040, 0x605020],
-  dirt:    0x6a5840,
   boat:    [0x2c2010, 0x483020, 0x604030],
   person:  0x4a6030,
   leg:     0x4a3828,
@@ -137,19 +142,30 @@ export class FishingCampRenderer {
     fishingCamps: Map<number, FishingCampState>,
     season: Season,
     riverMask: Uint8Array | null,
+    regionGrid: Uint16Array | null,
   ): { campMask: Uint8Array; renderData: FishingCampRenderData[] } {
     const NN = resolution;
     const palette = getPalette(season);
     const mask = new Uint8Array(NN * NN);
     const renderData: FishingCampRenderData[] = [];
 
+    // Paint all camp regions as dirt first (single pass over regionGrid)
+    if (regionGrid) {
+      const dirtColor = DIRT_COLOR[season];
+      for (const [, camp] of fishingCamps) {
+        const ri = camp.regionIndex;
+        for (let i = 0; i < NN * NN; i++) {
+          if (regionGrid[i] !== ri) continue;
+          pixels[i] = dirtColor;
+          mask[i] = 1;
+        }
+      }
+    }
+
     for (const [, camp] of fishingCamps) {
       const { hutPx, hutPy, dockPx, dockPy, waterDirX, waterDirY, variant, duchyIndex } = camp;
 
       if (hutPx < 20 || hutPy < 20 || hutPx >= NN - 20 || hutPy >= NN - 20) continue;
-
-      // ── Dirt ground ─────────────────────────────────────────────────────
-      this._stampDirt(pixels, NN, hutPx, hutPy, palette, riverMask, mask);
 
       // ── Dock or wharf ────────────────────────────────────────────────────
       if (variant === 'ocean') {
@@ -195,38 +211,6 @@ export class FishingCampRenderer {
     }
 
     return { campMask: mask, renderData };
-  }
-
-  // ── Dirt ground oval ─────────────────────────────────────────────────────
-  private _stampDirt(
-    pixels: Uint32Array, NN: number,
-    cx: number, cy: number,
-    palette: FishingPalette,
-    riverMask: Uint8Array | null,
-    mask: Uint8Array,
-  ): void {
-    const dr = (palette.dirt >> 16) & 0xff;
-    const dg = (palette.dirt >> 8) & 0xff;
-    const db = palette.dirt & 0xff;
-    const R = 16;
-    for (let dy = -R; dy <= R; dy++) {
-      for (let dx = -R; dx <= R; dx++) {
-        if (dx * dx + dy * dy > R * R) continue;
-        const px = cx + dx, py = cy + dy;
-        if (px < 0 || px >= NN || py < 0 || py >= NN) continue;
-        const idx = py * NN + px;
-        if (riverMask && riverMask[idx]) continue;
-        const existing = pixels[idx];
-        const er = existing & 0xff;
-        const eg = (existing >> 8) & 0xff;
-        const eb = (existing >> 16) & 0xff;
-        const nr = Math.round(er + (dr - er) * 0.65);
-        const ng = Math.round(eg + (dg - eg) * 0.65);
-        const nb = Math.round(eb + (db - eb) * 0.65);
-        pixels[idx] = (255 << 24) | (nb << 16) | (ng << 8) | nr;
-        mask[idx] = 1;
-      }
-    }
   }
 
   // ── Ocean pier (plank line + T-head) ─────────────────────────────────────

@@ -221,51 +221,62 @@ export class CoastalRenderer {
     const BEACH_WIDTH = 6; // pixels of sandy beach
     const COBBLE_SHADES = [0x787880, 0x888890, 0x94949c, 0xa0a0a8, 0xacacb4];
 
+    // Pass A: Paint beach sand on coast-terrain pixels near ocean
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
         const i = py * N + px;
         if (isOcean[i]) continue;
-        if (!isCoast[i]) continue; // only paint beach on coast terrain
+        if (!isCoast[i]) continue; // only paint sand on coast terrain
 
-        // Don't paint sand over rivers
         if (riverMask && riverMask[i]) continue;
 
         const dist = oceanDist[i];
+        if (dist > BEACH_WIDTH + 2) continue;
+
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
         const noiseVal = beachNoise(wx * 0.01, wy * 0.01);
         const edgeVariation = BEACH_WIDTH + noiseVal * 2;
-
-        // Skip pixels beyond the beach + cobble zone (cobble extends up to 2px past sand)
-        if (dist > edgeVariation + 2.5) continue;
-
-        // Cobble rock: tight 1-2px band at the inland edge of the beach
-        const cobbleWidth = 1.0 + (beachNoise(wx * 0.03, wy * 0.03) + 1) * 0.5; // 1-2px
-        if (dist > edgeVariation - cobbleWidth && dist <= edgeVariation + cobbleWidth) {
-          const cobbleN = beachNoise(wx * 0.15, wy * 0.15);
-          const ci = Math.min(COBBLE_SHADES.length - 1,
-            Math.floor(((cobbleN + 1) / 2) * COBBLE_SHADES.length));
-          pixels[i] = applyBrightness(COBBLE_SHADES[ci], 0.85 + cobbleN * 0.1);
-          continue;
-        }
-
-        // Beyond the sand zone
         if (dist > edgeVariation) continue;
 
-        // Sand color based on distance from water (darker near water = wet sand)
         const beachColors = BEACH_COLORS_BY_SEASON[season];
         const t = dist / BEACH_WIDTH;
         const colorIdx = Math.min(beachColors.length - 1,
           Math.floor(t * beachColors.length));
-
-        // Add slight noise variation
         const detailN = beachNoise(wx * 0.05, wy * 0.05);
         const adjustedIdx = Math.max(0, Math.min(beachColors.length - 1,
           colorIdx + Math.floor(detailN * 1.5)));
 
         const rgb = beachColors[adjustedIdx];
-        const brightness = 0.85 + detailN * 0.15;
-        pixels[i] = applyBrightness(rgb, brightness);
+        pixels[i] = applyBrightness(rgb, 0.85 + detailN * 0.15);
+      }
+    }
+
+    // Pass B: Cobble rock border — 1-2px band on ANY land pixel at the
+    // inland edge of the beach (where coast meets lowland/highland).
+    // This runs on all terrain types so it appears at the grass/sand boundary.
+    for (let py = 0; py < N; py++) {
+      for (let px = 0; px < N; px++) {
+        const i = py * N + px;
+        if (isOcean[i]) continue;
+        if (riverMask && riverMask[i]) continue;
+
+        const dist = oceanDist[i];
+        if (dist > BEACH_WIDTH + 4 || dist < 2) continue; // broad filter
+
+        const wx = (px + 0.5) * scale;
+        const wy = (py + 0.5) * scale;
+        const noiseVal = beachNoise(wx * 0.01, wy * 0.01);
+        const edgeVariation = BEACH_WIDTH + noiseVal * 2;
+        const cobbleWidth = 1.0 + (beachNoise(wx * 0.03, wy * 0.03) + 1) * 0.5; // 1-2px
+
+        // Cobble sits right at the beach edge, straddling the sand/grass boundary
+        if (dist >= edgeVariation - 0.5 && dist <= edgeVariation + cobbleWidth) {
+          const cobbleN = beachNoise(wx * 0.15, wy * 0.15);
+          const ci = Math.min(COBBLE_SHADES.length - 1,
+            Math.floor(((cobbleN + 1) / 2) * COBBLE_SHADES.length));
+          pixels[i] = applyBrightness(COBBLE_SHADES[ci], 0.85 + cobbleN * 0.1);
+        }
       }
     }
 

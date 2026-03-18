@@ -150,10 +150,11 @@ export class WoodcutterRenderer {
     season: Season,
     riverMask: Uint8Array | null,
     removedTrees: Set<number>,
-  ): { woodcutterMask: Uint8Array; renderData: WoodcutterRenderData[] } {
+  ): { woodcutterMask: Uint8Array; woodcutterBuildingMask: Uint8Array; renderData: WoodcutterRenderData[] } {
     const NN = resolution;
     const palette = getPalette(season);
-    const mask = new Uint8Array(NN * NN);
+    const mask = new Uint8Array(NN * NN);           // wide clearing (tree avoidance)
+    const buildMask = new Uint8Array(NN * NN);      // tight (actual structure pixels only)
     const renderData: WoodcutterRenderData[] = [];
 
     for (const [_di, wc] of woodcutters) {
@@ -179,8 +180,8 @@ export class WoodcutterRenderer {
       // Stamp hut shadow
       this._stampShadow(pixels, NN, hutPx, hutPy, WOODCUTTER_HUT);
 
-      // Stamp hut sprite
-      this._stampSprite(pixels, NN, hutPx, hutPy, WOODCUTTER_HUT, palette, mask);
+      // Stamp hut sprite (marks both masks)
+      this._stampSprite(pixels, NN, hutPx, hutPy, WOODCUTTER_HUT, palette, mask, buildMask);
 
       // Chimney position (for smoke animation)
       const chimneyPx = hutPx - Math.floor(WOODCUTTER_HUT.w / 2) + 3;
@@ -190,7 +191,7 @@ export class WoodcutterRenderer {
       if (lumberCount > 0) {
         const stackX = hutPx + 6;
         const stackY = hutPy - 1;
-        this._stampLumber(pixels, NN, stackX, stackY, palette, mask);
+        this._stampLumber(pixels, NN, stackX, stackY, palette, mask, buildMask);
       }
 
       // Sawmill: water wheel flush against hut left wall + stone dam
@@ -202,9 +203,9 @@ export class WoodcutterRenderer {
         wheelPy = hutPy - 3;  // vertically centered on the wall
 
         // Stone dam: 2 rows of stone below and around the wheel
-        this._stampDam(pixels, NN, wheelPx, wheelPy, palette, mask, riverMask);
+        this._stampDam(pixels, NN, wheelPx, wheelPy, palette, buildMask, riverMask);
 
-        // Stamp initial wheel frame
+        // Stamp initial wheel frame (NOT in buildMask — animator overwrites each frame)
         this._stampWheel(pixels, NN, wheelPx, wheelPy, 0, palette, mask);
       }
 
@@ -222,7 +223,7 @@ export class WoodcutterRenderer {
       });
     }
 
-    return { woodcutterMask: mask, renderData };
+    return { woodcutterMask: mask, woodcutterBuildingMask: buildMask, renderData };
   }
 
   /**
@@ -399,6 +400,7 @@ export class WoodcutterRenderer {
   private _stampSprite(
     pixels: Uint32Array, NN: number, cx: number, cy: number,
     tmpl: SpriteTemplate, palette: WoodcutterPalette, mask: Uint8Array,
+    buildMask?: Uint8Array,
   ): void {
     const startX = cx - Math.floor(tmpl.w / 2);
     const startY = cy - tmpl.anchorY;
@@ -444,6 +446,7 @@ export class WoodcutterRenderer {
         const b = color & 0xff;
         pixels[idx] = packABGR(r, g, b);
         mask[idx] = 1;
+        if (buildMask) buildMask[idx] = 1;
       }
     }
   }
@@ -452,6 +455,7 @@ export class WoodcutterRenderer {
   private _stampLumber(
     pixels: Uint32Array, NN: number, cx: number, cy: number,
     palette: WoodcutterPalette, mask: Uint8Array,
+    buildMask?: Uint8Array,
   ): void {
     const startX = cx - Math.floor(LUMBER_STACK.w / 2);
     const startY = cy - LUMBER_STACK.anchorY;
@@ -473,6 +477,7 @@ export class WoodcutterRenderer {
         const b = color & 0xff;
         pixels[idx] = packABGR(r, g, b);
         mask[idx] = 1;
+        if (buildMask) buildMask[idx] = 1;
       }
     }
   }
@@ -502,7 +507,7 @@ export class WoodcutterRenderer {
         const g = (color >> 8) & 0xff;
         const b = color & 0xff;
         pixels[idx] = packABGR(r, g, b);
-        mask[idx] = 1;
+        // Don't mark wheel in mask — animator needs to overwrite these each frame
       }
     }
   }

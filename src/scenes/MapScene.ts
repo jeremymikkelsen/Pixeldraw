@@ -830,9 +830,8 @@ export class MapScene extends Phaser.Scene {
     }
 
     // Woodcutter huts + lumber stacks + sawmill dam/wheel (before trees so clearing works)
-    // Phase 1: render buildings, no treeMask yet (targets + dirt paths come in phase 2)
     const wcRenderer = new WoodcutterRenderer();
-    const { woodcutterMask, renderData: wcRenderData } = wcRenderer.render(
+    const { woodcutterMask, woodcutterBuildingMask, renderData: wcRenderData } = wcRenderer.render(
       pixels, PIXEL_RESOLUTION, this._state.woodcutters,
       seed, season, riverMask, this._state.removedTrees,
     );
@@ -841,19 +840,27 @@ export class MapScene extends Phaser.Scene {
       if (woodcutterMask[i]) structureMask[i] = 1;
     }
 
-    // Trees with seasonal palettes (pass structureMask + removedTrees to avoid overlapping)
+    // Trees: 3-step pipeline
+    // 1. Compute all tree positions (no drawing yet) — needed for woodcutter targeting
     const treeRenderer = new TreeRenderer();
+    const allPlacedTrees = treeRenderer.placeTrees(
+      topo, hydro, PIXEL_RESOLUTION, seed, season,
+      structureMask, this._state.removedTrees,
+    );
+
+    // 2. Woodcutter selects targets from placed trees → adds to removedTrees immediately
+    //    so the trees are gone from the static render (animator draws them during felling)
+    wcRenderer.findTargetsAndDrawPaths(
+      pixels, PIXEL_RESOLUTION, wcRenderData, allPlacedTrees,
+      this._state.removedTrees, riverMask, seed,
+    );
+
+    // 3. Render trees — now skips any just-added to removedTrees by woodcutter
     const treeResult = treeRenderer.renderTrees(
       pixels, topo, hydro, PIXEL_RESOLUTION, seed, season,
       structureMask, this._state.removedTrees,
     );
     const treeMask = treeResult.treeMask;
-
-    // Woodcutter phase 2: now that trees are placed, find targets + draw dirt haul paths
-    wcRenderer.findTargetsAndDrawPaths(
-      pixels, PIXEL_RESOLUTION, wcRenderData, treeResult.placedTrees,
-      this._state.removedTrees, riverMask, seed,
-    );
 
     // Fishing camps — dock/wharf, hut, racks, static fishermen (before trees so clearing works)
     const fishingRenderer = new FishingCampRenderer();
@@ -894,9 +901,10 @@ export class MapScene extends Phaser.Scene {
     // Structures (3/4 perspective with ground shadows)
     const buildingMask = structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
 
-    // Merge woodcutter mask into building mask so rivers don't overdraw woodcutter pixels
+    // Merge woodcutter BUILDING mask (tight, actual pixels only) so rivers
+    // don't overdraw the hut/lumber — but river can flow through the clearing
     for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
-      if (woodcutterMask[bi]) buildingMask[bi] = 1;
+      if (woodcutterBuildingMask[bi]) buildingMask[bi] = 1;
     }
     // Merge fishing camp mask so static dock/hut pixels persist over river animation
     for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {

@@ -473,8 +473,13 @@ export interface TreeRenderResult {
 // ---------------------------------------------------------------------------
 export class TreeRenderer {
 
-  renderTrees(
-    pixels: Uint32Array,
+  /**
+   * Phase 1: Compute all tree placements without drawing.
+   * Returns PlacedTree[] for external systems (woodcutter targeting).
+   * Call this BEFORE selecting woodcutter targets so targets can be
+   * added to removedTrees before rendering.
+   */
+  placeTrees(
     topo: TopographyGenerator,
     hydro: HydrologyGenerator,
     resolution: number,
@@ -482,187 +487,10 @@ export class TreeRenderer {
     season: Season = Season.Summer,
     structureMask?: Uint8Array,
     removedTrees?: Set<number>,
-  ): TreeRenderResult {
-    const rng = mulberry32(seed ^ 0x7ee0000);
-    const N = resolution;
-    const scale = topo.size / N;
-    const { points } = topo.mesh;
-    const numRegions = topo.mesh.numRegions;
+  ): PlacedTree[] {
+    const trees = this._computeTreeInstances(topo, hydro, resolution, seed, season, structureMask, removedTrees);
 
-    // ------------------------------------------------------------------
-    // 1. Spatial grid for nearest-region lookup (same as GroundRenderer)
-    // ------------------------------------------------------------------
-    const cellSize = 40;
-    const gridW = Math.ceil(topo.size / cellSize);
-    const grid: number[][] = new Array(gridW * gridW);
-    for (let i = 0; i < grid.length; i++) grid[i] = [];
-
-    for (let r = 0; r < numRegions; r++) {
-      const gx = Math.min(Math.floor(points[r].x / cellSize), gridW - 1);
-      const gy = Math.min(Math.floor(points[r].y / cellSize), gridW - 1);
-      if (gx >= 0 && gy >= 0) {
-        grid[gy * gridW + gx].push(r);
-      }
-    }
-
-    // ------------------------------------------------------------------
-    // 2. Build river exclusion mask
-    // ------------------------------------------------------------------
-    const riverMask = this._buildRiverMask(topo, hydro, N);
-
-    // ------------------------------------------------------------------
-    // 3. Poisson disk sampling for candidate positions
-    // ------------------------------------------------------------------
-    const pds = new PoissonDiskSampling({
-      shape: [N, N],
-      minDistance: MIN_TREE_SPACING,
-      maxDistance: MAX_TREE_SPACING,
-      tries: 20,
-    }, rng);
-    const candidates = pds.fill();
-
-    // ------------------------------------------------------------------
-    // 4. Filter candidates and build tree instances
-    // ------------------------------------------------------------------
-    const trees: TreeInstance[] = [];
-
-    for (const pt of candidates) {
-      const px = Math.floor(pt[0]);
-      const py = Math.floor(pt[1]);
-
-      // Edge check
-      if (px < EDGE_MARGIN || py < EDGE_MARGIN ||
-          px >= N - EDGE_MARGIN || py >= N - EDGE_MARGIN) continue;
-
-      // River avoidance
-      if (riverMask[py * N + px]) continue;
-
-      // Structure avoidance — don't place trees on buildings
-      if (structureMask && structureMask[py * N + px]) continue;
-
-      // Skip trees that have been permanently removed by woodcutters
-      if (removedTrees && removedTrees.has(py * N + px)) continue;
-
-      // Find nearest region
-      const wx = (px + 0.5) * scale;
-      const wy = (py + 0.5) * scale;
-      const gx = Math.floor(wx / cellSize);
-      const gyCur = Math.floor(wy / cellSize);
-
-      let bestR = 0;
-      let bestD = Infinity;
-      for (let dy = -2; dy <= 2; dy++) {
-        const cy = gyCur + dy;
-        if (cy < 0 || cy >= gridW) continue;
-        for (let dx = -2; dx <= 2; dx++) {
-          const cx = gx + dx;
-          if (cx < 0 || cx >= gridW) continue;
-          for (const r of grid[cy * gridW + cx]) {
-            const d = (points[r].x - wx) ** 2 + (points[r].y - wy) ** 2;
-            if (d < bestD) { bestD = d; bestR = r; }
-          }
-        }
-      }
-
-      // Terrain check: lowland, highland, and rock (up to snow line)
-      const terrain = topo.terrainType[bestR];
-      if (terrain !== 'lowland' && terrain !== 'highland' && terrain !== 'rock') continue;
-
-      const elev = topo.elevation[bestR];
-      if (elev >= SNOW_LINE) continue;  // above snow line = no trees
-
-      // Moisture filter
-      const moisture = hydro.moisture[bestR];
-      if (moisture < MIN_MOISTURE) continue;
-
-      // Elevation-based density:
-      //   Lowland (< 0.25): sparse plains, ~10% keep for occasional trees
-      //   Highland (0.25–0.45): dense deciduous forest, ramps up quickly
-      //   Rock (0.45–SNOW_LINE): dense conifers right up to treeline
-      let elevDensity: number;
-      if (elev < 0.25) {
-        // Plains: very sparse, scattered trees
-        elevDensity = 0.10;
-      } else if (elev < 0.30) {
-        // Transition: ramp from sparse to dense
-        const t = (elev - 0.25) / 0.05;
-        elevDensity = 0.10 + 0.85 * t;
-      } else {
-        // Dense forest from highland through rock, right up to treeline
-        elevDensity = 0.95;
-      }
-
-      // Combined thinning: elevation density × moisture
-      const keepChance = elevDensity * (moisture * 0.7 + 0.3);
-      if (rng() > keepChance) continue;
-
-      // Determine tree type (all conifer on rock terrain)
-      let isConifer: boolean;
-      if (elev < DECIDUOUS_ONLY_BELOW) {
-        isConifer = false;
-      } else if (elev >= CONIFER_ONLY_ABOVE) {
-        isConifer = true;
-      } else {
-        // Blend zone
-        const t = (elev - DECIDUOUS_ONLY_BELOW) / (CONIFER_ONLY_ABOVE - DECIDUOUS_ONLY_BELOW);
-        isConifer = rng() < t;
-      }
-
-      // Pick size based on moisture (wetter = bigger)
-      // Winter deciduous: use bare tree templates with dendritic branching
-      const isBareWinter = season === Season.Winter && !isConifer;
-      const templates = isConifer ? CONIFER_TEMPLATES : (isBareWinter ? BARE_TEMPLATES : DECIDUOUS_TEMPLATES);
-      const palettes = isConifer ? getConiferPalettes(season) : getDeciduousPalettes(season, rng);
-      const sizeRoll = rng() + moisture * 0.3;
-      let templateIdx: number;
-      if (sizeRoll > 1.0) {
-        // Large: last template
-        templateIdx = templates.length - 1;
-      } else if (sizeRoll > 0.5) {
-        // Medium: middle templates
-        templateIdx = Math.floor(templates.length * 0.4 + rng() * templates.length * 0.3);
-      } else {
-        // Small: first templates
-        templateIdx = Math.floor(rng() * Math.ceil(templates.length * 0.4));
-      }
-      templateIdx = Math.min(templateIdx, templates.length - 1);
-
-      trees.push({
-        px,
-        py,
-        template: templates[templateIdx],
-        palette: palettes[Math.floor(rng() * palettes.length)],
-        flipped: rng() < 0.5,
-        isConifer,
-        season,
-      });
-    }
-
-    // ------------------------------------------------------------------
-    // 5. Sort by Y for painter's algorithm (north to south)
-    // ------------------------------------------------------------------
-    trees.sort((a, b) => a.py - b.py);
-
-    // Tree mask: tracks which pixels are covered by tree sprites
-    const treeMask = new Uint8Array(N * N);
-
-    // ------------------------------------------------------------------
-    // 6. Shadow pass (skip bare winter deciduous — no leaf canopy to cast shadow)
-    // ------------------------------------------------------------------
-    for (const tree of trees) {
-      if (tree.season === Season.Winter && !tree.isConifer) continue;
-      this._stampShadow(pixels, N, tree);
-    }
-
-    // ------------------------------------------------------------------
-    // 7. Sprite pass (also marks tree mask)
-    // ------------------------------------------------------------------
-    for (const tree of trees) {
-      this._stampSprite(pixels, N, tree, treeMask);
-    }
-
-    // Build placed tree data for external systems (woodcutter targeting)
-    const placedTrees: PlacedTree[] = trees.map(t => {
+    return trees.map(t => {
       const canopyColors = t.palette.canopy.map(c => {
         const r = (c >> 16) & 0xff;
         const g = (c >> 8) & 0xff;
@@ -687,8 +515,199 @@ export class TreeRenderer {
         isConifer: t.isConifer,
       };
     });
+  }
+
+  /**
+   * Phase 2: Render trees into the pixel buffer.
+   * Pass removedTrees (which may have grown since placeTrees) to skip
+   * trees that woodcutters have targeted this season.
+   */
+  renderTrees(
+    pixels: Uint32Array,
+    topo: TopographyGenerator,
+    hydro: HydrologyGenerator,
+    resolution: number,
+    seed: number,
+    season: Season = Season.Summer,
+    structureMask?: Uint8Array,
+    removedTrees?: Set<number>,
+  ): TreeRenderResult {
+    const N = resolution;
+    const trees = this._computeTreeInstances(topo, hydro, N, seed, season, structureMask, removedTrees);
+
+    trees.sort((a, b) => a.py - b.py);
+
+    const treeMask = new Uint8Array(N * N);
+
+    // Shadow pass (skip bare winter deciduous)
+    for (const tree of trees) {
+      if (tree.season === Season.Winter && !tree.isConifer) continue;
+      this._stampShadow(pixels, N, tree);
+    }
+
+    // Sprite pass
+    for (const tree of trees) {
+      this._stampSprite(pixels, N, tree, treeMask);
+    }
+
+    // Build placed tree data
+    const placedTrees: PlacedTree[] = trees.map(t => {
+      const canopyColors = t.palette.canopy.map(c => {
+        const r = (c >> 16) & 0xff;
+        const g = (c >> 8) & 0xff;
+        const b = c & 0xff;
+        return packABGR(r, g, b);
+      });
+      const trunkColors = t.palette.trunk.map(c => {
+        const r = (c >> 16) & 0xff;
+        const g = (c >> 8) & 0xff;
+        const b = c & 0xff;
+        return packABGR(r, g, b);
+      });
+      return {
+        px: t.px, py: t.py,
+        w: t.template.w, h: t.template.h, data: t.template.data,
+        canopyColors, trunkColors,
+        flipped: t.flipped, isConifer: t.isConifer,
+      };
+    });
 
     return { treeMask, placedTrees };
+  }
+
+  /**
+   * Core placement logic — shared by placeTrees() and renderTrees().
+   * Deterministic from seed: same inputs always produce same tree list.
+   */
+  private _computeTreeInstances(
+    topo: TopographyGenerator,
+    hydro: HydrologyGenerator,
+    resolution: number,
+    seed: number,
+    season: Season,
+    structureMask?: Uint8Array,
+    removedTrees?: Set<number>,
+  ): TreeInstance[] {
+    const rng = mulberry32(seed ^ 0x7ee0000);
+    const N = resolution;
+    const scale = topo.size / N;
+    const { points } = topo.mesh;
+    const numRegions = topo.mesh.numRegions;
+
+    // Spatial grid for nearest-region lookup
+    const cellSize = 40;
+    const gridW = Math.ceil(topo.size / cellSize);
+    const grid: number[][] = new Array(gridW * gridW);
+    for (let i = 0; i < grid.length; i++) grid[i] = [];
+
+    for (let r = 0; r < numRegions; r++) {
+      const gx = Math.min(Math.floor(points[r].x / cellSize), gridW - 1);
+      const gy = Math.min(Math.floor(points[r].y / cellSize), gridW - 1);
+      if (gx >= 0 && gy >= 0) {
+        grid[gy * gridW + gx].push(r);
+      }
+    }
+
+    const riverMask = this._buildRiverMask(topo, hydro, N);
+
+    const pds = new PoissonDiskSampling({
+      shape: [N, N],
+      minDistance: MIN_TREE_SPACING,
+      maxDistance: MAX_TREE_SPACING,
+      tries: 20,
+    }, rng);
+    const candidates = pds.fill();
+
+    const trees: TreeInstance[] = [];
+
+    for (const pt of candidates) {
+      const px = Math.floor(pt[0]);
+      const py = Math.floor(pt[1]);
+
+      if (px < EDGE_MARGIN || py < EDGE_MARGIN ||
+          px >= N - EDGE_MARGIN || py >= N - EDGE_MARGIN) continue;
+
+      if (riverMask[py * N + px]) continue;
+      if (structureMask && structureMask[py * N + px]) continue;
+      if (removedTrees && removedTrees.has(py * N + px)) continue;
+
+      const wx = (px + 0.5) * scale;
+      const wy = (py + 0.5) * scale;
+      const gx = Math.floor(wx / cellSize);
+      const gyCur = Math.floor(wy / cellSize);
+
+      let bestR = 0;
+      let bestD = Infinity;
+      for (let dy = -2; dy <= 2; dy++) {
+        const cy = gyCur + dy;
+        if (cy < 0 || cy >= gridW) continue;
+        for (let dx = -2; dx <= 2; dx++) {
+          const cx = gx + dx;
+          if (cx < 0 || cx >= gridW) continue;
+          for (const r of grid[cy * gridW + cx]) {
+            const d = (points[r].x - wx) ** 2 + (points[r].y - wy) ** 2;
+            if (d < bestD) { bestD = d; bestR = r; }
+          }
+        }
+      }
+
+      const terrain = topo.terrainType[bestR];
+      if (terrain !== 'lowland' && terrain !== 'highland' && terrain !== 'rock') continue;
+
+      const elev = topo.elevation[bestR];
+      if (elev >= SNOW_LINE) continue;
+
+      const moisture = hydro.moisture[bestR];
+      if (moisture < MIN_MOISTURE) continue;
+
+      let elevDensity: number;
+      if (elev < 0.25) {
+        elevDensity = 0.10;
+      } else if (elev < 0.30) {
+        const t = (elev - 0.25) / 0.05;
+        elevDensity = 0.10 + 0.85 * t;
+      } else {
+        elevDensity = 0.95;
+      }
+
+      const keepChance = elevDensity * (moisture * 0.7 + 0.3);
+      if (rng() > keepChance) continue;
+
+      let isConifer: boolean;
+      if (elev < DECIDUOUS_ONLY_BELOW) {
+        isConifer = false;
+      } else if (elev >= CONIFER_ONLY_ABOVE) {
+        isConifer = true;
+      } else {
+        const t = (elev - DECIDUOUS_ONLY_BELOW) / (CONIFER_ONLY_ABOVE - DECIDUOUS_ONLY_BELOW);
+        isConifer = rng() < t;
+      }
+
+      const isBareWinter = season === Season.Winter && !isConifer;
+      const templates = isConifer ? CONIFER_TEMPLATES : (isBareWinter ? BARE_TEMPLATES : DECIDUOUS_TEMPLATES);
+      const palettes = isConifer ? getConiferPalettes(season) : getDeciduousPalettes(season, rng);
+      const sizeRoll = rng() + moisture * 0.3;
+      let templateIdx: number;
+      if (sizeRoll > 1.0) {
+        templateIdx = templates.length - 1;
+      } else if (sizeRoll > 0.5) {
+        templateIdx = Math.floor(templates.length * 0.4 + rng() * templates.length * 0.3);
+      } else {
+        templateIdx = Math.floor(rng() * Math.ceil(templates.length * 0.4));
+      }
+      templateIdx = Math.min(templateIdx, templates.length - 1);
+
+      trees.push({
+        px, py,
+        template: templates[templateIdx],
+        palette: palettes[Math.floor(rng() * palettes.length)],
+        flipped: rng() < 0.5,
+        isConifer,
+        season,
+      });
+    }
+
+    return trees;
   }
 
   // -----------------------------------------------------------------------

@@ -1,15 +1,16 @@
 /**
  * WoodcutterAnimator — per-frame animation for woodcutter buildings.
  *
- * Season flow per target tree:
- *  1. Walk to tree, chop it, tree falls (with full sprite), process into log
- *     — this happens ONCE at the start
- *  2. Log remains on ground for the rest of the season
- *  3. Worker makes repeated trips: walk to log → pick up lumber → carry back
+ * Target trees are pre-removed from the static render (not drawn by
+ * TreeRenderer). The animator draws them back as part of the animation:
+ *  1. Standing tree visible while worker walks out + chops
+ *  2. Tree falls (full sprite rotating)
+ *  3. Log remains on ground, worker makes repeated haul trips
  *
- * Sawmill: 3 targets, staggered — each gets its own fell-then-haul sequence.
+ * This means clicking through turns quickly still shows correct state —
+ * the trees are already gone from removedTrees before any animation plays.
  *
- * Chimney smoke puffs always. Water wheel always spins (sawmill).
+ * Chimney smoke always. Water wheel always spins (sawmill).
  */
 
 import { mulberry32 } from './TopographyGenerator';
@@ -31,23 +32,20 @@ const PERSON_RIGHT = { w: 2, h: 3, cells: [[0, _], [1, 1], [_, 2]] };
 const PERSON_LEFT  = { w: 2, h: 3, cells: [[_, 0], [1, 1], [2, _]] };
 
 // ── Timing ─────────────────────────────────────────────────────────────────
-// Total season animation = FELL_DURATION + N × HAUL_DURATION
-// The felling happens once, then hauling loops for the remainder.
 const FELL_DURATION  = 12000;  // 12s: walk + chop + fall + process
 const HAUL_DURATION  = 8000;   // 8s per haul trip
+const HAUL_TRIPS     = 3;
 
 // Felling sub-phases (fractions of FELL_DURATION)
-const FELL_WALK     = 0.25;  // walk to tree
-const FELL_CHOP     = 0.40;  // chopping
-const FELL_FALL     = 0.55;  // tree falls over
-const FELL_WORK     = 0.80;  // process into log (strip branches)
-// 0.80-1.0 = first haul pickup (grab log, transition to haul loop)
+const FELL_WALK     = 0.25;
+const FELL_CHOP     = 0.40;
+const FELL_FALL     = 0.55;
+const FELL_WORK     = 0.80;
 
 // Haul sub-phases (fractions of HAUL_DURATION)
-const HAUL_WALK_OUT = 0.25;  // walk to log
-const HAUL_PICKUP   = 0.35;  // bend down, grab
-const HAUL_CARRY    = 0.75;  // carry back
-// 0.75-1.0 = drop at hut, idle
+const HAUL_WALK_OUT = 0.25;
+const HAUL_PICKUP   = 0.35;
+const HAUL_CARRY    = 0.75;
 
 // ── Smoke ──────────────────────────────────────────────────────────────────
 interface SmokeParticle { x: number; y: number; age: number; }
@@ -61,16 +59,10 @@ const WHEEL_COLORS = [
   packABGR(0x6e, 0x5c, 0x3e),
 ];
 
-// ── Ground behind tree (for erasing standing tree) ─────────────────────────
-interface TreeFootprint {
-  pixels: Map<number, number>; // screenIdx → ground color
-}
-
 // ── Per-woodcutter ─────────────────────────────────────────────────────────
 interface LumberjackState {
   data: WoodcutterRenderData;
   bodyColor: number;
-  treeFootprints: TreeFootprint[];
   smokeParticles: SmokeParticle[];
   lastSmokeSpawn: number;
 }
@@ -83,72 +75,24 @@ export class WoodcutterAnimator {
   private _season: Season;
   private _dirty: { screenIdx: number; color: number }[] = [];
   private _savedThisFrame = new Set<number>();
-  private _state: GameState;
 
   constructor(
     renderData: WoodcutterRenderData[],
-    pixels: Uint32Array,
+    _pixels: Uint32Array,
     N: number,
     seed: number,
     season: Season,
     duchyColors: number[],
-    state: GameState,
+    _state: GameState,
   ) {
     this._N = N;
     this._season = season;
-    this._state = state;
 
     for (const rd of renderData) {
-      const rng = mulberry32(seed ^ (rd.duchyIndex * 0x4c3b + 0xface));
       const bodyColor = duchyColors[rd.duchyIndex] ?? packABGR(0x80, 0x60, 0x40);
-
-      // Capture ground pixels behind each target tree
-      const treeFootprints: TreeFootprint[] = [];
-      for (const tree of rd.targets) {
-        const fp: TreeFootprint = { pixels: new Map() };
-        const { w, h, data, flipped } = tree;
-        const startX = tree.px - Math.floor(w / 2);
-        const startY = tree.py - h + 1;
-
-        // Sample ground color from transparent/border pixels around the sprite
-        let gR = 0, gG = 0, gB = 0, gN = 0;
-        for (let sy = -1; sy <= h; sy++) {
-          for (let sx = -1; sx <= w; sx++) {
-            if (sx >= 0 && sx < w && sy >= 0 && sy < h) {
-              const srcX = flipped ? (w - 1 - sx) : sx;
-              if (data[sy * w + srcX] !== 0) continue;
-            }
-            const px = startX + sx;
-            const py = startY + sy;
-            if (px < 0 || px >= N || py < 0 || py >= N) continue;
-            const c = pixels[py * N + px];
-            gR += c & 0xff;
-            gG += (c >> 8) & 0xff;
-            gB += (c >> 16) & 0xff;
-            gN++;
-          }
-        }
-        const avg = gN > 0
-          ? (255 << 24) | (Math.round(gB / gN) << 16) | (Math.round(gG / gN) << 8) | Math.round(gR / gN)
-          : pixels[tree.py * N + tree.px];
-
-        for (let sy = 0; sy < h; sy++) {
-          for (let sx = 0; sx < w; sx++) {
-            const srcX = flipped ? (w - 1 - sx) : sx;
-            if (data[sy * w + srcX] === 0) continue;
-            const px = startX + sx;
-            const py = startY + sy;
-            if (px < 0 || px >= N || py < 0 || py >= N) continue;
-            fp.pixels.set(py * N + px, avg);
-          }
-        }
-        treeFootprints.push(fp);
-      }
-
       this._workers.push({
         data: rd,
         bodyColor,
-        treeFootprints,
         smokeParticles: [],
         lastSmokeSpawn: 0,
       });
@@ -171,69 +115,54 @@ export class WoodcutterAnimator {
     }
   }
 
-  // ── Main target animation — fell once, then haul loop ────────────────────
+  // ── Main animation: fell once, then haul loop ────────────────────────────
   private _animateTargets(
     pixels: Uint32Array, w: LumberjackState,
     timeMs: number, N: number, ext: Int16Array | null,
   ): void {
     const targets = w.data.targets;
     const numTargets = targets.length;
-
-    // Each target gets a staggered slot: fell + multiple hauls
-    // Total per-target time = FELL_DURATION + 3 × HAUL_DURATION
-    const haulTripsPerTarget = 3;
-    const targetDur = FELL_DURATION + haulTripsPerTarget * HAUL_DURATION;
+    const targetDur = FELL_DURATION + HAUL_TRIPS * HAUL_DURATION;
     const totalDur = targetDur * numTargets;
     const globalT = timeMs % totalDur;
 
     const targetIdx = Math.min(Math.floor(globalT / targetDur), numTargets - 1);
-    const localT = globalT - targetIdx * targetDur; // ms into this target's sequence
+    const localT = globalT - targetIdx * targetDur;
 
     const tree = targets[targetIdx];
-    const footprint = w.treeFootprints[targetIdx];
     const hx = w.data.hutPx;
     const hy = w.data.hutPy;
     const tx = tree.px;
     const ty = tree.py;
     const fallsRight = tx > hx;
 
-    // Once felling is past chop phase, erase the standing tree
-    if (localT >= FELL_DURATION * FELL_CHOP && footprint) {
-      for (const [screenIdx, groundColor] of footprint.pixels) {
-        this._saveDirty(pixels, screenIdx);
-        pixels[screenIdx] = groundColor;
-      }
-    }
-
-    // After the tree is processed, always show the log on the ground
-    if (localT >= FELL_DURATION * FELL_WORK) {
-      this._drawLog(pixels, N, ext, tx, ty, fallsRight, tree);
-    }
-
     let wx: number, wy: number;
     let facingRight: boolean;
     let carryingLog = false;
 
     if (localT < FELL_DURATION) {
-      // ─── Felling phase ───────────────────────────────────────────────
+      // ─── Felling phase ─────────────────────────────────────────────
       const ft = localT / FELL_DURATION;
 
       if (ft < FELL_WALK) {
-        // Walk to tree
+        // Walking to tree — draw the standing tree (it's not in static render)
+        this._drawStandingTree(pixels, N, ext, tree);
         const p = ft / FELL_WALK;
         wx = Math.round(hx + (tx - hx) * p);
         wy = Math.round(hy + (ty - hy) * p);
         facingRight = fallsRight;
+
       } else if (ft < FELL_CHOP) {
-        // Chopping
+        // Chopping — tree still standing
+        this._drawStandingTree(pixels, N, ext, tree);
         wx = tx + (fallsRight ? -2 : 2);
         wy = ty;
         facingRight = fallsRight;
-        // Axe flash
         const phase = ((ft - FELL_WALK) / (FELL_CHOP - FELL_WALK)) * 8;
         if (Math.floor(phase) % 2 === 0) {
           this._flash(pixels, N, ext, tx, ty - 2);
         }
+
       } else if (ft < FELL_FALL) {
         // Tree falls
         wx = tx + (fallsRight ? -3 : 3);
@@ -241,50 +170,50 @@ export class WoodcutterAnimator {
         facingRight = fallsRight;
         const fallP = (ft - FELL_CHOP) / (FELL_FALL - FELL_CHOP);
         this._drawFallingTree(pixels, N, ext, tree, fallP, fallsRight);
+
       } else if (ft < FELL_WORK) {
-        // Process downed tree — two workers at it
+        // Processing downed tree into log
+        this._drawDownedTree(pixels, N, ext, tree, fallsRight);
         wx = tx + (fallsRight ? 3 : -3);
         wy = ty + 1;
         facingRight = fallsRight;
-        this._drawDownedTree(pixels, N, ext, tree, fallsRight);
         this._stampPerson(pixels, N, ext, wx + (fallsRight ? 2 : -2), ty + 1, !facingRight, w.bodyColor);
-        // Work flashes
         const phase = ((ft - FELL_FALL) / (FELL_WORK - FELL_FALL)) * 6;
         if (Math.floor(phase) % 3 === 0) {
           this._flash(pixels, N, ext, tx + (fallsRight ? 1 : -1), ty);
         }
+
       } else {
-        // First haul — pick up from log
+        // First pickup from fresh log
+        this._drawLog(pixels, N, ext, tx, ty, fallsRight, tree);
         wx = tx + (fallsRight ? 2 : -2);
         wy = ty;
         facingRight = !fallsRight;
       }
     } else {
-      // ─── Hauling loop ────────────────────────────────────────────────
+      // ─── Hauling loop — log persists on ground ─────────────────────
+      this._drawLog(pixels, N, ext, tx, ty, fallsRight, tree);
+
       const haulT = localT - FELL_DURATION;
       const tripT = haulT % HAUL_DURATION;
       const ht = tripT / HAUL_DURATION;
 
       if (ht < HAUL_WALK_OUT) {
-        // Walk to log
         const p = ht / HAUL_WALK_OUT;
         wx = Math.round(hx + (tx - hx) * p);
         wy = Math.round(hy + (ty - hy) * p);
         facingRight = fallsRight;
       } else if (ht < HAUL_PICKUP) {
-        // At log, bending to pick up
         wx = tx + (fallsRight ? 2 : -2);
         wy = ty;
         facingRight = !fallsRight;
       } else if (ht < HAUL_CARRY) {
-        // Carry lumber back
         const p = (ht - HAUL_PICKUP) / (HAUL_CARRY - HAUL_PICKUP);
         wx = Math.round(tx + (hx - tx) * p);
         wy = Math.round(ty + (hy - ty) * p);
         facingRight = hx > tx;
         carryingLog = true;
       } else {
-        // Drop at hut, idle
         wx = hx + 1;
         wy = hy;
         facingRight = false;
@@ -309,43 +238,45 @@ export class WoodcutterAnimator {
     }
   }
 
-  // ── Draw a persistent log on the ground (just trunk, no canopy) ──────────
-  private _drawLog(
+  // ── Draw the standing tree (not in static render — we draw it here) ──────
+  private _drawStandingTree(
     pixels: Uint32Array, N: number, ext: Int16Array | null,
-    tx: number, ty: number, liesRight: boolean, tree: PlacedTree,
+    tree: PlacedTree,
   ): void {
-    // Horizontal log: length based on tree height, but just the trunk portion
-    const logLen = Math.min(6, Math.max(3, Math.floor(tree.h * 0.3)));
-    const dir = liesRight ? 1 : -1;
-    const colors = [tree.trunkColors[1] ?? TRUNK_COLOR, tree.trunkColors[0] ?? LOG_COLOR];
+    const { w, h, data, flipped, canopyColors, trunkColors } = tree;
+    const startX = tree.px - Math.floor(w / 2);
+    const startY = tree.py - h + 1;
 
-    for (let i = 0; i < logLen; i++) {
-      const px = tx + i * dir;
-      const py0 = ty;
-      // Log is 1-2px tall
-      for (let dy = 0; dy < 2; dy++) {
-        const py = py0 + dy;
+    for (let sy = 0; sy < h; sy++) {
+      for (let sx = 0; sx < w; sx++) {
+        const srcX = flipped ? (w - 1 - sx) : sx;
+        const cell = data[sy * w + srcX];
+        if (cell === 0) continue;
+
+        const px = startX + sx;
+        const py = startY + sy;
         if (px < 0 || px >= N || py < 0 || py >= N) continue;
+
         const srcIdx = py * N + px;
         const screenIdx = this._screenIdx(srcIdx, N, ext);
         if (screenIdx < 0) continue;
+
         this._saveDirty(pixels, screenIdx);
-        pixels[screenIdx] = colors[(i + dy) & 1];
+
+        if (cell === 1) { // trunk
+          const trunkMid = Math.floor(w / 2);
+          pixels[screenIdx] = srcX <= trunkMid
+            ? (trunkColors[0] ?? TRUNK_COLOR)
+            : (trunkColors[1] ?? TRUNK_COLOR);
+        } else { // canopy — use middle shade
+          const relX = (srcX - w / 2) / Math.max(1, w / 2);
+          const relY = (sy - h / 2) / Math.max(1, h / 2);
+          const light = relX * -0.707 + relY * -0.707;
+          const idx = Math.max(0, Math.min(4, Math.floor((light + 1) / 2 * 4.99)));
+          pixels[screenIdx] = canopyColors[idx] ?? canopyColors[2] ?? TRUNK_COLOR;
+        }
       }
     }
-  }
-
-  // ── Flash helper ─────────────────────────────────────────────────────────
-  private _flash(
-    pixels: Uint32Array, N: number, ext: Int16Array | null,
-    fx: number, fy: number,
-  ): void {
-    if (fx < 0 || fx >= N || fy < 0 || fy >= N) return;
-    const idx = fy * N + fx;
-    const si = this._screenIdx(idx, N, ext);
-    if (si < 0) return;
-    this._saveDirty(pixels, si);
-    pixels[si] = packABGR(0xff, 0xff, 0xe0);
   }
 
   // ── Falling tree (full sprite rotating) ──────────────────────────────────
@@ -382,7 +313,7 @@ export class WoodcutterAnimator {
     }
   }
 
-  // ── Downed tree (full sprite 90° rotated, shown briefly during processing)
+  // ── Downed tree (full sprite 90° rotated, during processing phase) ───────
   private _drawDownedTree(
     pixels: Uint32Array, N: number, ext: Int16Array | null,
     tree: PlacedTree, liesRight: boolean,
@@ -411,6 +342,41 @@ export class WoodcutterAnimator {
           : (canopyColors[2] ?? canopyColors[0] ?? TRUNK_COLOR);
       }
     }
+  }
+
+  // ── Persistent log on ground (just trunk, no canopy) ─────────────────────
+  private _drawLog(
+    pixels: Uint32Array, N: number, ext: Int16Array | null,
+    tx: number, ty: number, liesRight: boolean, tree: PlacedTree,
+  ): void {
+    const logLen = Math.min(6, Math.max(3, Math.floor(tree.h * 0.3)));
+    const dir = liesRight ? 1 : -1;
+    const colors = [tree.trunkColors[1] ?? TRUNK_COLOR, tree.trunkColors[0] ?? LOG_COLOR];
+
+    for (let i = 0; i < logLen; i++) {
+      const px = tx + i * dir;
+      for (let dy = 0; dy < 2; dy++) {
+        const py = ty + dy;
+        if (px < 0 || px >= N || py < 0 || py >= N) continue;
+        const srcIdx = py * N + px;
+        const screenIdx = this._screenIdx(srcIdx, N, ext);
+        if (screenIdx < 0) continue;
+        this._saveDirty(pixels, screenIdx);
+        pixels[screenIdx] = colors[(i + dy) & 1];
+      }
+    }
+  }
+
+  // ── Flash helper ─────────────────────────────────────────────────────────
+  private _flash(
+    pixels: Uint32Array, N: number, ext: Int16Array | null,
+    fx: number, fy: number,
+  ): void {
+    if (fx < 0 || fx >= N || fy < 0 || fy >= N) return;
+    const si = this._screenIdx(fy * N + fx, N, ext);
+    if (si < 0) return;
+    this._saveDirty(pixels, si);
+    pixels[si] = packABGR(0xff, 0xff, 0xe0);
   }
 
   // ── Smoke ────────────────────────────────────────────────────────────────
@@ -456,22 +422,22 @@ export class WoodcutterAnimator {
     timeMs: number, N: number, ext: Int16Array | null,
   ): void {
     const frame = Math.floor(timeMs / 200) % WHEEL_FRAMES.length;
-    const frameData = WHEEL_FRAMES[frame];
+    const fd = WHEEL_FRAMES[frame];
     const cx = w.data.wheelPx;
     const cy = w.data.wheelPy;
-    const startX = cx - Math.floor(WHEEL_SIZE / 2);
-    const startY = cy - Math.floor(WHEEL_SIZE / 2);
-    for (let sy = 0; sy < WHEEL_SIZE; sy++) {
-      for (let sx = 0; sx < WHEEL_SIZE; sx++) {
-        if (frameData[sy * WHEEL_SIZE + sx] !== WH) continue;
-        const px = startX + sx;
-        const py = startY + sy;
+    const sx = cx - Math.floor(WHEEL_SIZE / 2);
+    const sy = cy - Math.floor(WHEEL_SIZE / 2);
+    for (let r = 0; r < WHEEL_SIZE; r++) {
+      for (let c = 0; c < WHEEL_SIZE; c++) {
+        if (fd[r * WHEEL_SIZE + c] !== WH) continue;
+        const px = sx + c;
+        const py = sy + r;
         if (px < 0 || px >= N || py < 0 || py >= N) continue;
         const srcIdx = py * N + px;
         const screenIdx = this._screenIdx(srcIdx, N, ext);
         if (screenIdx < 0) continue;
         this._saveDirty(pixels, screenIdx);
-        pixels[screenIdx] = WHEEL_COLORS[(sx + sy) & 1];
+        pixels[screenIdx] = WHEEL_COLORS[(c + r) & 1];
       }
     }
   }

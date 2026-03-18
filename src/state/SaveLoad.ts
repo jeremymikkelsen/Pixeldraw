@@ -24,6 +24,9 @@ export interface SaveData {
   year: number;
   economies: DuchyEconomy[];
   savedAt: string;     // ISO UTC timestamp
+  // Woodcutter mutable state (v2+)
+  woodcutterLumber?: Record<string, number>;  // duchyIndex → lumberCount
+  removedTrees?: number[];                    // pixel indices of felled tree trunks
 }
 
 // ─── Save ───────────────────────────────────────────────────────────────────
@@ -36,6 +39,8 @@ export function saveGame(
   season: Season,
   year: number,
   economies: DuchyEconomy[],
+  woodcutterLumber?: Record<string, number>,
+  removedTrees?: number[],
 ): void {
   const data: SaveData = {
     version: SAVE_VERSION,
@@ -47,6 +52,8 @@ export function saveGame(
     year,
     economies: economies.map(e => structuredClone(e)),
     savedAt: new Date().toISOString(),
+    woodcutterLumber,
+    removedTrees,
   };
 
   try {

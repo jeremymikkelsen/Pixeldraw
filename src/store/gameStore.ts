@@ -102,6 +102,13 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
   saveCurrentGame: () => {
     const { gameState } = get();
     if (!gameState) return;
+    // Serialize woodcutter lumber counts
+    const woodcutterLumber: Record<string, number> = {};
+    if (gameState.woodcutters) {
+      for (const [di, wc] of gameState.woodcutters) {
+        woodcutterLumber[String(di)] = wc.lumberCount;
+      }
+    }
     persistSave(
       gameState.seed,
       gameState.mapSize,
@@ -110,6 +117,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gameState.season,
       gameState.year,
       gameState.economies,
+      woodcutterLumber,
+      gameState.removedTrees ? Array.from(gameState.removedTrees) : [],
     );
     set({ hasSave: true });
   },

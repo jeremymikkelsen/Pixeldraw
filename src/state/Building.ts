@@ -88,6 +88,17 @@ export interface BuildingInstance {
   duchyIndex: number;   // which duchy owns it
 }
 
+// ─── Woodcutter / Sawmill state ─────────────────────────────────────────────
+
+export interface WoodcutterState {
+  regionIndex: number;        // Voronoi region where placed
+  duchyIndex: number;
+  variant: 'manual' | 'sawmill';
+  hutPx: number;              // pixel-space x of hut
+  hutPy: number;              // pixel-space y of hut
+  lumberCount: number;        // cumulative trees cut (drives board stack visuals)
+}
+
 // ─── All building definitions ───────────────────────────────────────────────
 
 export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {

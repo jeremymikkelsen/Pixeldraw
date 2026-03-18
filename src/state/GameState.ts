@@ -13,6 +13,8 @@ import { DuchyEconomy, createDuchyEconomy, processEconomyTurn, countTerrain } fr
 import type { SaveData } from './SaveLoad';
 import { AgImprovementType, assignAgImprovements } from './AgImprovements';
 import { KingData, selectKing } from './King';
+import type { WoodcutterState } from './Building';
+import { assignWoodcutters } from './WoodcutterAssignment';
 
 export interface GameState {
   seed: number;
@@ -39,12 +41,20 @@ export interface GameState {
 
   // Economy — one per duchy, indexed same as duchies[]
   economies: DuchyEconomy[];
+
+  // Woodcutters — one per duchy (duchyIndex → state)
+  woodcutters: Map<number, WoodcutterState>;
+  // Tree trunk positions permanently removed by woodcutters (pixel indices: y * N + x)
+  removedTrees: Set<number>;
 }
 
 /**
  * Create a fully initialized GameState from a seed (new game).
  * @param playerHouse - index into HOUSES[] for the player's chosen house
  */
+// Pixel resolution used for woodcutter placement (must match MapScene PIXEL_RESOLUTION)
+const PIXEL_RESOLUTION = 1536;
+
 export function createGameState(seed: number, mapSize: number, playerHouse: number = 0): GameState {
   const topo = new TopographyGenerator(mapSize, seed);
   const hydro = new HydrologyGenerator(topo, seed);
@@ -52,6 +62,7 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
   const roads = generateRoads(topo, hydro, duchies);
   const agImprovements = assignAgImprovements(topo, hydro, duchies, seed, roads);
   const king = selectKing(seed);
+  const woodcutters = assignWoodcutters(topo, hydro, duchies, seed, PIXEL_RESOLUTION, roads, agImprovements);
 
   // Initialize economies for each duchy
   const economies = duchies.map(() => createDuchyEconomy(50));
@@ -71,6 +82,8 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
     roads,
     agImprovements,
     economies,
+    woodcutters,
+    removedTrees: new Set(),
   };
 }
 
@@ -85,6 +98,15 @@ export function loadGameState(save: SaveData): GameState {
   const roads = generateRoads(topo, hydro, duchies);
   const agImprovements = assignAgImprovements(topo, hydro, duchies, save.seed, roads);
   const king = selectKing(save.seed);
+  const woodcutters = assignWoodcutters(topo, hydro, duchies, save.seed, PIXEL_RESOLUTION, roads, agImprovements);
+
+  // Restore mutable woodcutter state from save
+  if (save.woodcutterLumber) {
+    for (const [diStr, count] of Object.entries(save.woodcutterLumber)) {
+      const wc = woodcutters.get(Number(diStr));
+      if (wc) wc.lumberCount = count as number;
+    }
+  }
 
   return {
     seed: save.seed,
@@ -101,6 +123,8 @@ export function loadGameState(save: SaveData): GameState {
     roads,
     agImprovements,
     economies: save.economies,
+    woodcutters,
+    removedTrees: new Set(save.removedTrees ?? []),
   };
 }
 
@@ -121,5 +145,14 @@ export function advanceTurn(state: GameState): void {
       duchy.regions, terrainTypes, duchy.hasRiver, duchy.hasForest,
     );
     state.economies[i] = processEconomyTurn(state.economies[i], terrain);
+
+    // Woodcutter timber production
+    const wc = state.woodcutters.get(i);
+    if (wc) {
+      const treesPerSeason = wc.variant === 'sawmill' ? 3 : 1;
+      wc.lumberCount += treesPerSeason;
+      const timberYield = wc.variant === 'sawmill' ? 5 : 1;
+      state.economies[i].resources.timber += timberYield;
+    }
   }
 }

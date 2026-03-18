@@ -462,6 +462,7 @@ export class TreeRenderer {
     seed: number,
     season: Season = Season.Summer,
     structureMask?: Uint8Array,
+    removedTrees?: Set<number>,
   ): Uint8Array {
     const rng = mulberry32(seed ^ 0x7ee0000);
     const N = resolution;
@@ -519,6 +520,9 @@ export class TreeRenderer {
 
       // Structure avoidance — don't place trees on buildings
       if (structureMask && structureMask[py * N + px]) continue;
+
+      // Skip trees that have been permanently removed by woodcutters
+      if (removedTrees && removedTrees.has(py * N + px)) continue;
 
       // Find nearest region
       const wx = (px + 0.5) * scale;

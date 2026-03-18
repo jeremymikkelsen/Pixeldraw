@@ -19,6 +19,8 @@ import { DeerAnimator } from '../generators/DeerAnimator';
 import { RoadTravelerAnimator } from '../generators/RoadTravelerAnimator';
 import { FenceRenderer } from '../generators/FenceRenderer';
 import { GardenWorkerAnimator } from '../generators/GardenWorkerAnimator';
+import { WoodcutterRenderer } from '../generators/WoodcutterRenderer';
+import { WoodcutterAnimator } from '../generators/WoodcutterAnimator';
 import { packABGR } from '../generators/TerrainPalettes';
 
 const MAP_SIZE = 3072;
@@ -65,6 +67,7 @@ export class MapScene extends Phaser.Scene {
   private _deerAnimator: DeerAnimator | null = null;
   private _roadTravelerAnimator: RoadTravelerAnimator | null = null;
   private _gardenWorkerAnimator: GardenWorkerAnimator | null = null;
+  private _woodcutterAnimator: WoodcutterAnimator | null = null;
   private _duchyBorderPixels: { idx: number; color: number }[] = [];
   private _fencePixels: { idx: number; color: number }[] = [];
 
@@ -487,6 +490,9 @@ export class MapScene extends Phaser.Scene {
         if (this._gardenWorkerAnimator) {
           this._gardenWorkerAnimator.animate(this._pixels, time);
         }
+        if (this._woodcutterAnimator) {
+          this._woodcutterAnimator.animate(this._pixels, time);
+        }
         // Restore building/bridge pixels so they always render above rivers and coast
         for (const bp of this._buildingPixels) {
           this._pixels[bp.idx] = bp.color;
@@ -816,9 +822,23 @@ export class MapScene extends Phaser.Scene {
       }
     }
 
-    // Trees with seasonal palettes (pass structureMask to avoid overlapping buildings/roads)
+    // Woodcutter huts + lumber stacks + sawmill canals (before trees so clearing works)
+    const wcRenderer = new WoodcutterRenderer();
+    const { woodcutterMask, renderData: wcRenderData } = wcRenderer.render(
+      pixels, PIXEL_RESOLUTION, this._state.woodcutters,
+      topo, hydro, seed, season, riverMask,
+    );
+    // Merge woodcutter mask into structureMask so trees avoid the clearing
+    for (let i = 0; i < woodcutterMask.length; i++) {
+      if (woodcutterMask[i]) structureMask[i] = 1;
+    }
+
+    // Trees with seasonal palettes (pass structureMask + removedTrees to avoid overlapping)
     const treeRenderer = new TreeRenderer();
-    const treeMask = treeRenderer.renderTrees(pixels, topo, hydro, PIXEL_RESOLUTION, seed, season, structureMask);
+    const treeMask = treeRenderer.renderTrees(
+      pixels, topo, hydro, PIXEL_RESOLUTION, seed, season,
+      structureMask, this._state.removedTrees,
+    );
 
     // Mountain extrusion with seasonal snow line
     const mountainRenderer = new MountainRenderer();
@@ -848,6 +868,11 @@ export class MapScene extends Phaser.Scene {
 
     // Structures (3/4 perspective with ground shadows)
     const buildingMask = structureRenderer.renderSprites(pixels, PIXEL_RESOLUTION, structures, season, this._manorSprites.length > 0 ? this._manorSprites : undefined);
+
+    // Merge woodcutter mask into building mask so rivers don't overdraw woodcutter pixels
+    for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
+      if (woodcutterMask[bi]) buildingMask[bi] = 1;
+    }
 
     // Capture building pixel colors NOW (before river animation overwrites them)
     const buildingPixelColors: { idx: number; color: number }[] = [];
@@ -956,6 +981,22 @@ export class MapScene extends Phaser.Scene {
       this._roadTravelerAnimator = rta;
     } else {
       this._roadTravelerAnimator = null;
+    }
+
+    // Woodcutter animator (lumberjack + smoke + water wheel)
+    if (wcRenderData.length > 0) {
+      const duchyColors = this._state.duchies.map(d => {
+        const c = d.house.color;
+        return packABGR((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff);
+      });
+      const wca = new WoodcutterAnimator(
+        wcRenderData, treeMask, PIXEL_RESOLUTION,
+        seed, season, duchyColors, this._state,
+      );
+      wca.extrusionMap = mountainRenderer.extrusionMap;
+      this._woodcutterAnimator = wca;
+    } else {
+      this._woodcutterAnimator = null;
     }
 
     // Store refs

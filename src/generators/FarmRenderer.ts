@@ -84,17 +84,19 @@ const CROP: Record<number, Record<Season, [number, number]>> = {
 };
 
 // ── Pasture palettes ──────────────────────────────────────────────────────────
+// A and B are kept close together so the noise variation reads as a uniform
+// green field rather than a blotchy two-tone pattern.
 const PASTURE_A = {
-  [Season.Winter]: packABGR(0xc0, 0xc8, 0xb8),
-  [Season.Spring]: packABGR(0x48, 0x78, 0x28),
-  [Season.Summer]: packABGR(0x3e, 0x6c, 0x28),
-  [Season.Fall]: packABGR(0x58, 0x62, 0x28),
+  [Season.Winter]: packABGR(0xb8, 0xc4, 0xb0),
+  [Season.Spring]: packABGR(0x52, 0x8a, 0x2e),
+  [Season.Summer]: packABGR(0x46, 0x7c, 0x28),
+  [Season.Fall]:   packABGR(0x58, 0x6e, 0x28),
 };
 const PASTURE_B = {
-  [Season.Winter]: packABGR(0xd0, 0xd8, 0xc8),
-  [Season.Spring]: packABGR(0x60, 0x9a, 0x38),
-  [Season.Summer]: packABGR(0x52, 0x90, 0x38),
-  [Season.Fall]: packABGR(0x4c, 0x72, 0x2c),
+  [Season.Winter]: packABGR(0xc4, 0xd0, 0xbc),
+  [Season.Spring]: packABGR(0x5c, 0x98, 0x34),
+  [Season.Summer]: packABGR(0x50, 0x8a, 0x2e),
+  [Season.Fall]:   packABGR(0x62, 0x7a, 0x2c),
 };
 
 // ── Fence colors ─────────────────────────────────────────────────────────────

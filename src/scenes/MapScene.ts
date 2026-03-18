@@ -822,11 +822,12 @@ export class MapScene extends Phaser.Scene {
       }
     }
 
-    // Woodcutter huts + lumber stacks + sawmill canals (before trees so clearing works)
+    // Woodcutter huts + lumber stacks + sawmill dam/wheel (before trees so clearing works)
+    // Phase 1: render buildings, no treeMask yet (targets + dirt paths come in phase 2)
     const wcRenderer = new WoodcutterRenderer();
     const { woodcutterMask, renderData: wcRenderData } = wcRenderer.render(
       pixels, PIXEL_RESOLUTION, this._state.woodcutters,
-      topo, hydro, seed, season, riverMask,
+      seed, season, riverMask, this._state.removedTrees,
     );
     // Merge woodcutter mask into structureMask so trees avoid the clearing
     for (let i = 0; i < woodcutterMask.length; i++) {
@@ -838,6 +839,12 @@ export class MapScene extends Phaser.Scene {
     const treeMask = treeRenderer.renderTrees(
       pixels, topo, hydro, PIXEL_RESOLUTION, seed, season,
       structureMask, this._state.removedTrees,
+    );
+
+    // Woodcutter phase 2: now that treeMask exists, find targets + draw dirt haul paths
+    wcRenderer.findTargetsAndDrawPaths(
+      pixels, PIXEL_RESOLUTION, wcRenderData, treeMask,
+      this._state.removedTrees, riverMask, seed,
     );
 
     // Mountain extrusion with seasonal snow line

@@ -1,17 +1,15 @@
 /**
- * WoodcutterRenderer — static rendering of woodcutter huts, lumber stacks,
- * and sawmill water wheels + canals.
+ * WoodcutterRenderer — static rendering of woodcutter huts, lumber stack,
+ * sawmill water wheels with stone dam, and dirt haul paths.
  *
  * Rendered once per season during _renderMapInner, before TreeRenderer so
  * trees avoid the woodcutter clearing.
  */
 
-import { TopographyGenerator, mulberry32 } from './TopographyGenerator';
-import { HydrologyGenerator } from './HydrologyGenerator';
+import { mulberry32 } from './TopographyGenerator';
 import { packABGR } from './TerrainPalettes';
 import { Season } from '../state/Season';
 import type { WoodcutterState } from '../state/Building';
-import { RIVER_THRESHOLD } from './utils';
 
 // ── Cell types (matches StructureRenderer conventions) ──────────────────────
 const _ = 0;  // transparent
@@ -43,37 +41,37 @@ const WOODCUTTER_HUT: SpriteTemplate = {
   ],
 };
 
-// ── Lumber stack sprite (4×3 each) ─────────────────────────────────────────
+// ── Lumber stack sprite (5×3, single stack next to hut) ────────────────────
 const LUMBER_STACK: SpriteTemplate = {
-  w: 4, h: 3, anchorY: 2, data: [
-    L, L, L, L,
-    L, L, L, L,
-    L, L, L, L,
+  w: 5, h: 3, anchorY: 2, data: [
+    L, L, L, L, L,
+    L, L, L, L, L,
+    L, L, L, L, L,
   ],
 };
 
 // ── Water wheel frames (5×5, 4 rotation states) ───────────────────────────
 const WH = 11; // wheel cell type
 const WHEEL_FRAMES: number[][] = [
-  // Frame 0: spokes at +  (vertical + horizontal)
+  // Frame 0: spokes at +
   [_, _, WH, _, _,
    _, _, WH, _, _,
    WH, WH, WH, WH, WH,
    _, _, WH, _, _,
    _, _, WH, _, _],
-  // Frame 1: spokes at ×  (diagonal)
+  // Frame 1: spokes at ×
   [WH, _, _, _, WH,
    _, WH, _, WH, _,
    _, _, WH, _, _,
    _, WH, _, WH, _,
    WH, _, _, _, WH],
-  // Frame 2: spokes at +  (same as 0 but offset)
+  // Frame 2: spokes at + (repeat for smooth spin)
   [_, _, WH, _, _,
    _, _, WH, _, _,
    WH, WH, WH, WH, WH,
    _, _, WH, _, _,
    _, _, WH, _, _],
-  // Frame 3: spokes at ×  (same as 1)
+  // Frame 3: spokes at ×
   [WH, _, _, _, WH,
    _, WH, _, WH, _,
    _, _, WH, _, _,
@@ -92,6 +90,7 @@ interface WoodcutterPalette {
   chimney: number[];  // 2 shades
   lumber: number[];   // 3 shades (board colors)
   wheel: number[];    // 2 shades
+  dam: number[];      // 2 shades for stone dam
 }
 
 const PALETTE_SUMMER: WoodcutterPalette = {
@@ -103,6 +102,7 @@ const PALETTE_SUMMER: WoodcutterPalette = {
   chimney: [0x887070, 0x988080],
   lumber:  [0x8a7040, 0x9c8250, 0xae9460],
   wheel:   [0x5a4830, 0x6e5c3e],
+  dam:     [0x686060, 0x787070],
 };
 
 const PALETTE_WINTER: WoodcutterPalette = {
@@ -114,6 +114,7 @@ const PALETTE_WINTER: WoodcutterPalette = {
   chimney: [0x887070, 0x988080],
   lumber:  [0x706040, 0x827250, 0x948460],
   wheel:   [0x5a4830, 0x6e5c3e],
+  dam:     [0x686068, 0x787078],
 };
 
 function getPalette(season: Season): WoodcutterPalette {
@@ -128,13 +129,14 @@ export interface WoodcutterRenderData {
   hutPx: number;
   hutPy: number;
   lumberCount: number;
-  // Sawmill-only: wheel position and canal path
+  // Sawmill: wheel position
   wheelPx: number;
   wheelPy: number;
-  canalPixels: number[];  // pixel indices of the canal
   // Chimney top position for smoke
   chimneyPx: number;
   chimneyPy: number;
+  // Target tree positions (for worker pathing and dirt trails)
+  targets: { px: number; py: number }[];
 }
 
 // ── Renderer ───────────────────────────────────────────────────────────────
@@ -143,11 +145,10 @@ export class WoodcutterRenderer {
     pixels: Uint32Array,
     resolution: number,
     woodcutters: Map<number, WoodcutterState>,
-    topo: TopographyGenerator,
-    hydro: HydrologyGenerator,
     seed: number,
     season: Season,
     riverMask: Uint8Array | null,
+    removedTrees: Set<number>,
   ): { woodcutterMask: Uint8Array; renderData: WoodcutterRenderData[] } {
     const NN = resolution;
     const palette = getPalette(season);
@@ -184,33 +185,23 @@ export class WoodcutterRenderer {
       const chimneyPx = hutPx - Math.floor(WOODCUTTER_HUT.w / 2) + 3;
       const chimneyPy = hutPy - WOODCUTTER_HUT.anchorY;
 
-      // Lumber stacks — placed to the right of the hut
-      const stackCount = Math.min(4, Math.floor(lumberCount / 2));
-      for (let si = 0; si < stackCount; si++) {
-        const stackX = hutPx + 6 + (si % 2) * 5;
-        const stackY = hutPy - 1 + Math.floor(si / 2) * 4;
+      // Single lumber stack — placed to the right of the hut
+      if (lumberCount > 0) {
+        const stackX = hutPx + 6;
+        const stackY = hutPy - 1;
         this._stampLumber(pixels, NN, stackX, stackY, palette, mask);
       }
 
-      // Sawmill: water wheel + canal
+      // Sawmill: water wheel flush against hut left wall + stone dam
       let wheelPx = 0, wheelPy = 0;
-      const canalPixels: number[] = [];
 
-      if (variant === 'sawmill' && riverMask) {
-        // Place wheel to the left of the hut
-        wheelPx = hutPx - 8;
-        wheelPy = hutPy - 2;
+      if (variant === 'sawmill') {
+        // Wheel right next to hut's left wall (water mill style)
+        wheelPx = hutPx - Math.floor(WOODCUTTER_HUT.w / 2) - 2;
+        wheelPy = hutPy - 3;  // vertically centered on the wall
 
-        // Draw canal from wheel to nearest river pixel (BFS)
-        const canalPath = this._findCanalPath(wheelPx, wheelPy, riverMask, NN);
-        const canalColor = packABGR(0x30, 0x60, 0x90);
-        for (const idx of canalPath) {
-          if (!riverMask[idx]) {
-            pixels[idx] = canalColor;
-            mask[idx] = 1;
-            canalPixels.push(idx);
-          }
-        }
+        // Stone dam: 2 rows of stone below and around the wheel
+        this._stampDam(pixels, NN, wheelPx, wheelPy, palette, mask, riverMask);
 
         // Stamp initial wheel frame
         this._stampWheel(pixels, NN, wheelPx, wheelPy, 0, palette, mask);
@@ -224,13 +215,152 @@ export class WoodcutterRenderer {
         lumberCount,
         wheelPx,
         wheelPy,
-        canalPixels,
         chimneyPx,
         chimneyPy,
+        targets: [], // populated in phase 2 after tree rendering
       });
     }
 
     return { woodcutterMask: mask, renderData };
+  }
+
+  /**
+   * Phase 2: find target trees and draw dirt haul paths.
+   * Called after TreeRenderer so treeMask is available.
+   */
+  findTargetsAndDrawPaths(
+    pixels: Uint32Array,
+    resolution: number,
+    renderData: WoodcutterRenderData[],
+    treeMask: Uint8Array,
+    removedTrees: Set<number>,
+    riverMask: Uint8Array | null,
+    seed: number,
+  ): void {
+    const NN = resolution;
+    for (const rd of renderData) {
+      const rng = mulberry32(seed ^ (rd.duchyIndex * 0x7e3a + 0xbeef + 0x1111));
+      const numTargets = rd.variant === 'sawmill' ? 3 : 1;
+      rd.targets = this._findTargetTrees(
+        rd.hutPx, rd.hutPy, numTargets, NN, treeMask, removedTrees, riverMask, rng,
+      );
+      for (const t of rd.targets) {
+        this._drawDirtPath(pixels, NN, rd.hutPx, rd.hutPy, t.px, t.py, riverMask);
+      }
+    }
+  }
+
+  // ── Find target trees (same side of river as hut) ────────────────────────
+  private _findTargetTrees(
+    hutPx: number, hutPy: number, count: number, NN: number,
+    treeMask: Uint8Array, removedTrees: Set<number>,
+    riverMask: Uint8Array | null, rng: () => number,
+  ): { px: number; py: number }[] {
+
+    // Collect candidate trees sorted by distance
+    const candidates: { px: number; py: number; dist: number }[] = [];
+    const searchRadius = 45;
+
+    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+      for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+        const tx = hutPx + dx;
+        const ty = hutPy + dy;
+        if (tx < 0 || tx >= NN || ty < 0 || ty >= NN) continue;
+        const tIdx = ty * NN + tx;
+        if (!treeMask[tIdx]) continue;
+        if (removedTrees.has(tIdx)) continue;
+        const dist = dx * dx + dy * dy;
+        if (dist < 12 * 12) continue; // too close to clearing
+        if (dist > searchRadius * searchRadius) continue;
+        // Don't pick trees across a river
+        if (riverMask && this._pathCrossesRiver(hutPx, hutPy, tx, ty, riverMask, NN)) continue;
+        candidates.push({ px: tx, py: ty, dist });
+      }
+    }
+
+    candidates.sort((a, b) => a.dist - b.dist);
+
+    // Pick from the nearest candidates with some randomness
+    const result: { px: number; py: number }[] = [];
+    const used = new Set<number>();
+    for (let i = 0; i < count && candidates.length > 0; i++) {
+      // Pick from top 5 nearest remaining
+      const pool = candidates.filter((_, ci) => !used.has(ci)).slice(0, 5);
+      if (pool.length === 0) break;
+      const pick = pool[Math.floor(rng() * pool.length)];
+      result.push({ px: pick.px, py: pick.py });
+      // Remove picked and nearby candidates (don't pick two trees right next to each other)
+      const pickIdx = candidates.indexOf(pick);
+      used.add(pickIdx);
+      for (let ci = 0; ci < candidates.length; ci++) {
+        if (used.has(ci)) continue;
+        const c = candidates[ci];
+        if ((c.px - pick.px) ** 2 + (c.py - pick.py) ** 2 < 8 * 8) used.add(ci);
+      }
+    }
+
+    return result;
+  }
+
+  // ── Check if a straight line crosses river ───────────────────────────────
+  private _pathCrossesRiver(
+    x0: number, y0: number, x1: number, y1: number,
+    riverMask: Uint8Array, NN: number,
+  ): boolean {
+    // Sample points along the line
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy));
+    if (steps === 0) return false;
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const px = Math.round(x0 + dx * t);
+      const py = Math.round(y0 + dy * t);
+      if (px >= 0 && px < NN && py >= 0 && py < NN) {
+        if (riverMask[py * NN + px]) return true;
+      }
+    }
+    return false;
+  }
+
+  // ── Draw dirt haul path (1px Bresenham, 50% alpha blend) ─────────────────
+  private _drawDirtPath(
+    pixels: Uint32Array, NN: number,
+    x0: number, y0: number, x1: number, y1: number,
+    riverMask: Uint8Array | null,
+  ): void {
+    // Bresenham line
+    let cx = x0, cy = y0;
+    const dx = Math.abs(x1 - x0);
+    const dy = Math.abs(y1 - y0);
+    const sx = x0 < x1 ? 1 : -1;
+    const sy = y0 < y1 ? 1 : -1;
+    let err = dx - dy;
+
+    // Dirt color to blend toward (warm brown)
+    const dirtR = 0x7a, dirtG = 0x68, dirtB = 0x50;
+    const alpha = 0.50;
+
+    while (true) {
+      if (cx >= 0 && cx < NN && cy >= 0 && cy < NN) {
+        // Don't draw over river
+        if (!riverMask || !riverMask[cy * NN + cx]) {
+          const idx = cy * NN + cx;
+          const existing = pixels[idx];
+          const er = existing & 0xff;
+          const eg = (existing >> 8) & 0xff;
+          const eb = (existing >> 16) & 0xff;
+          const nr = Math.round(er + (dirtR - er) * alpha);
+          const ng = Math.round(eg + (dirtG - eg) * alpha);
+          const nb = Math.round(eb + (dirtB - eb) * alpha);
+          pixels[idx] = (255 << 24) | (nb << 16) | (ng << 8) | nr;
+        }
+      }
+      if (cx === x1 && cy === y1) break;
+      const e2 = 2 * err;
+      if (e2 > -dy) { err -= dy; cx += sx; }
+      if (e2 < dx)  { err += dx; cy += sy; }
+    }
   }
 
   // ── Shadow stamp ─────────────────────────────────────────────────────────
@@ -283,16 +413,15 @@ export class WoodcutterRenderer {
 
         const idx = py * NN + px;
 
-        // Smoke: alpha-blend white wisp
         if (cell === M) {
           const existing = pixels[idx];
           const er = existing & 0xff;
           const eg = (existing >> 8) & 0xff;
           const eb = (existing >> 16) & 0xff;
-          const alpha = 0.55;
-          const nr = Math.round(er + (0xe8 - er) * alpha);
-          const ng = Math.round(eg + (0xe4 - eg) * alpha);
-          const nb = Math.round(eb + (0xe0 - eb) * alpha);
+          const a = 0.55;
+          const nr = Math.round(er + (0xe8 - er) * a);
+          const ng = Math.round(eg + (0xe4 - eg) * a);
+          const nb = Math.round(eb + (0xe0 - eb) * a);
           pixels[idx] = (255 << 24) | (nb << 16) | (ng << 8) | nr;
           continue;
         }
@@ -377,62 +506,48 @@ export class WoodcutterRenderer {
     }
   }
 
-  // ── Canal pathfinding (BFS from wheel to nearest river pixel) ────────────
-  private _findCanalPath(
-    startX: number, startY: number,
-    riverMask: Uint8Array, NN: number,
-  ): number[] {
-    const MAX_SEARCH = 35;
-    const visited = new Uint8Array(NN * NN);
-    const parent = new Int32Array(NN * NN).fill(-1);
-    const queue: number[] = [];
+  // ── Stone dam around wheel (sawmill) ─────────────────────────────────────
+  private _stampDam(
+    pixels: Uint32Array, NN: number,
+    wheelCx: number, wheelCy: number,
+    palette: WoodcutterPalette, mask: Uint8Array,
+    riverMask: Uint8Array | null,
+  ): void {
+    // Draw stone dam pixels around and below the wheel
+    // The dam is a small stone platform: 7 wide, 2 rows below wheel, 1 row each side
+    const halfW = Math.floor(WHEEL_SIZE / 2) + 1;
+    const damTop = wheelCy + Math.floor(WHEEL_SIZE / 2) + 1;
 
-    const startIdx = startY * NN + startX;
-    queue.push(startIdx);
-    visited[startIdx] = 1;
-
-    let found = -1;
-    let qi = 0;
-
-    while (qi < queue.length && found < 0) {
-      const idx = queue[qi++];
-      const cx = idx % NN;
-      const cy = (idx - cx) / NN;
-
-      // Check distance from start
-      const dist = Math.abs(cx - startX) + Math.abs(cy - startY);
-      if (dist > MAX_SEARCH) continue;
-
-      // 4-connected neighbors
-      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-      for (const [dx, dy] of dirs) {
-        const nx = cx + dx;
-        const ny = cy + dy;
-        if (nx < 0 || nx >= NN || ny < 0 || ny >= NN) continue;
-        const nIdx = ny * NN + nx;
-        if (visited[nIdx]) continue;
-        visited[nIdx] = 1;
-        parent[nIdx] = idx;
-
-        if (riverMask[nIdx]) {
-          found = nIdx;
-          break;
-        }
-        queue.push(nIdx);
+    for (let dy = 0; dy < 2; dy++) {
+      for (let dx = -halfW; dx <= halfW; dx++) {
+        const px = wheelCx + dx;
+        const py = damTop + dy;
+        if (px < 0 || px >= NN || py < 0 || py >= NN) continue;
+        const idx = py * NN + px;
+        const color = palette.dam[(dx + dy) & 1];
+        const r = (color >> 16) & 0xff;
+        const g = (color >> 8) & 0xff;
+        const b = color & 0xff;
+        pixels[idx] = packABGR(r, g, b);
+        mask[idx] = 1;
       }
     }
 
-    // Trace path back
-    if (found < 0) return [];
-    const path: number[] = [];
-    let cur = found;
-    while (cur !== startIdx && cur >= 0) {
-      path.push(cur);
-      cur = parent[cur];
+    // Side walls of dam (1px each side, height of wheel)
+    for (let dy = -Math.floor(WHEEL_SIZE / 2); dy <= Math.floor(WHEEL_SIZE / 2); dy++) {
+      for (const side of [-halfW, halfW]) {
+        const px = wheelCx + side;
+        const py = wheelCy + dy;
+        if (px < 0 || px >= NN || py < 0 || py >= NN) continue;
+        const idx = py * NN + px;
+        const color = palette.dam[Math.abs(dy) & 1];
+        const r = (color >> 16) & 0xff;
+        const g = (color >> 8) & 0xff;
+        const b = color & 0xff;
+        pixels[idx] = packABGR(r, g, b);
+        mask[idx] = 1;
+      }
     }
-    path.push(startIdx);
-    path.reverse();
-    return path;
   }
 }
 

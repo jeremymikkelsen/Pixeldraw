@@ -97,6 +97,13 @@ const PASTURE_B = {
   [Season.Fall]: packABGR(0x4c, 0x72, 0x2c),
 };
 
+// ── Fence colors ─────────────────────────────────────────────────────────────
+const FENCE_POST  = packABGR(0x7a, 0x5c, 0x3a);  // light brown post
+const FENCE_RAIL  = packABGR(0x8a, 0x6c, 0x48);  // slightly lighter rail
+const FENCE_INSET = 2;    // pixels inside the region boundary
+const FENCE_POST_SPACING = 8;  // pixels between fence posts
+const FENCE_POST_HEIGHT = 3;   // post sticks up 3 pixels
+
 // ── RegionMeta: axis info per improvement region ──────────────────────────────
 interface RegionMeta {
   minX: number; maxX: number; minY: number; maxY: number;
@@ -223,6 +230,22 @@ export class FarmRenderer {
         }
       }
     }
+
+    // Pass 3: draw fences around pasture regions
+    for (const pd of this.pastures) {
+      this._drawPastureFence(pixels, regionGrid, N, pd);
+      // Re-capture interior pixels after fence so fence colors are stored for cow restore
+      pd.interiorPixels = [];
+    }
+    // Re-capture interior pixels including fence
+    for (let i = 0; i < N * N; i++) {
+      const r = regionGrid[i];
+      const type = improvements.get(r);
+      if (type === 'pasture') {
+        const pd = pastureMap.get(r);
+        if (pd) pd.interiorPixels.push({ idx: i, color: pixels[i] });
+      }
+    }
   }
 
   // ── Grain stalk pixel ───────────────────────────────────────────────────────
@@ -291,5 +314,50 @@ export class FarmRenderer {
   ): number {
     const n = (noise(px * 0.18, py * 0.18) + 1) / 2;
     return n > 0.5 ? PASTURE_B[season] : PASTURE_A[season];
+  }
+
+  // ── Pasture fence ──────────────────────────────────────────────────────────
+  private _drawPastureFence(
+    pixels: Uint32Array,
+    regionGrid: Uint16Array,
+    N: number,
+    pd: PastureData,
+  ): void {
+    const region = pd.regionIndex;
+
+    // Find border pixels: pasture pixels that are exactly FENCE_INSET pixels
+    // inside the boundary (neighbor at FENCE_INSET distance is outside region)
+    for (const p of pd.interiorPixels) {
+      const px = p.idx % N;
+      const py = (p.idx - px) / N;
+
+      // Check if this pixel is on the fence line (FENCE_INSET inside boundary)
+      let onBorder = false;
+      for (let d = 1; d <= FENCE_INSET; d++) {
+        // Check 4 neighbors at distance d
+        if (px - d >= 0 && regionGrid[(py) * N + (px - d)] !== region) { onBorder = true; break; }
+        if (px + d < N  && regionGrid[(py) * N + (px + d)] !== region) { onBorder = true; break; }
+        if (py - d >= 0 && regionGrid[(py - d) * N + px] !== region) { onBorder = true; break; }
+        if (py + d < N  && regionGrid[(py + d) * N + px] !== region) { onBorder = true; break; }
+      }
+      if (!onBorder) continue;
+
+      // This pixel is at the fence line — draw the rail
+      pixels[p.idx] = FENCE_RAIL;
+
+      // Draw fence posts: every FENCE_POST_SPACING pixels along the boundary
+      if ((px + py) % FENCE_POST_SPACING === 0) {
+        // Post extends upward (lower Y = visually up)
+        for (let h = 1; h <= FENCE_POST_HEIGHT; h++) {
+          const postY = py - h;
+          if (postY < 0) break;
+          const postIdx = postY * N + px;
+          // Only draw post if it's still inside the pasture region
+          if (regionGrid[postIdx] === region) {
+            pixels[postIdx] = FENCE_POST;
+          }
+        }
+      }
+    }
   }
 }

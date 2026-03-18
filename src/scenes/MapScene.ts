@@ -220,7 +220,8 @@ export class MapScene extends Phaser.Scene {
         this._isSpacePanning = true;
         this._spaceDragStartX = pointer.x;
         this._spaceDragStartY = pointer.y;
-        const cam = this.cameras.main;
+        const cam = this.cameras?.main;
+        if (!cam) return;
         this._spaceCamStartX = cam.scrollX;
         this._spaceCamStartY = cam.scrollY;
         this.game.canvas.style.cursor = 'grabbing';
@@ -229,7 +230,8 @@ export class MapScene extends Phaser.Scene {
 
     this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
       if (this._isSpacePanning) {
-        const cam = this.cameras.main;
+        const cam = this.cameras?.main;
+        if (!cam) return;
         const dx = (this._spaceDragStartX - pointer.x) / cam.zoom;
         const dy = (this._spaceDragStartY - pointer.y) / cam.zoom;
         cam.scrollX = this._spaceCamStartX + dx;
@@ -353,7 +355,8 @@ export class MapScene extends Phaser.Scene {
     const capitalPos = this._state.topo.mesh.points[duchy.capitalRegion];
     if (!capitalPos) return;
 
-    const cam = this.cameras.main;
+    const cam = this.cameras?.main;
+    if (!cam) return;
     cam.centerOn(capitalPos.x, capitalPos.y);
     cam.zoom = 1.5;
   }

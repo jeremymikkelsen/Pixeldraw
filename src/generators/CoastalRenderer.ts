@@ -219,6 +219,7 @@ export class CoastalRenderer {
     // Paint beaches: land pixels within BEACH_WIDTH of ocean
     // ----------------------------------------------------------------
     const BEACH_WIDTH = 6; // pixels of sandy beach
+    const COBBLE_SHADES = [0x808078, 0x909088, 0x9c9c94, 0xa8a8a0, 0xb4b4ac];
 
     for (let py = 0; py < N; py++) {
       for (let px = 0; px < N; px++) {
@@ -230,13 +231,25 @@ export class CoastalRenderer {
         if (riverMask && riverMask[i]) continue;
 
         const dist = oceanDist[i];
-        if (dist > BEACH_WIDTH) continue;
-
-        // Noise-modulated beach edge
         const wx = (px + 0.5) * scale;
         const wy = (py + 0.5) * scale;
         const noiseVal = beachNoise(wx * 0.01, wy * 0.01);
         const edgeVariation = BEACH_WIDTH + noiseVal * 2;
+
+        // Skip pixels beyond the beach + cobble zone
+        if (dist > edgeVariation + 2) continue;
+
+        // Cobble rock: 1-2px band at the inland edge of the beach
+        const cobbleWidth = 1.5 + beachNoise(wx * 0.03, wy * 0.03) * 0.5; // 1-2px
+        if (dist > edgeVariation - cobbleWidth && dist <= edgeVariation + 2) {
+          const cobbleN = beachNoise(wx * 0.15, wy * 0.15);
+          const ci = Math.min(COBBLE_SHADES.length - 1,
+            Math.floor(((cobbleN + 1) / 2) * COBBLE_SHADES.length));
+          pixels[i] = applyBrightness(COBBLE_SHADES[ci], 0.85 + cobbleN * 0.1);
+          continue;
+        }
+
+        // Beyond the sand zone
         if (dist > edgeVariation) continue;
 
         // Sand color based on distance from water (darker near water = wet sand)
@@ -250,19 +263,7 @@ export class CoastalRenderer {
         const adjustedIdx = Math.max(0, Math.min(beachColors.length - 1,
           colorIdx + Math.floor(detailN * 1.5)));
 
-        // Cobble rock at the inland edge of the beach (1-2px band)
-        const cobbleThreshold = edgeVariation - 1 - (beachNoise(wx * 0.04, wy * 0.04) + 1) * 0.5;
-        if (dist >= cobbleThreshold) {
-          const cobbleN = beachNoise(wx * 0.15, wy * 0.15);
-          const cobbleShades = [0x888880, 0x989890, 0xa8a8a0, 0xb0b0a8];
-          const ci = Math.min(cobbleShades.length - 1,
-            Math.floor(((cobbleN + 1) / 2) * cobbleShades.length));
-          pixels[i] = applyBrightness(cobbleShades[ci], 0.85 + cobbleN * 0.1);
-          continue;
-        }
-
         const rgb = beachColors[adjustedIdx];
-        // Apply same directional lighting as ground
         const brightness = 0.85 + detailN * 0.15;
         pixels[i] = applyBrightness(rgb, brightness);
       }

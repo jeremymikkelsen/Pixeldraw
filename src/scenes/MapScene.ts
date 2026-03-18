@@ -205,8 +205,11 @@ export class MapScene extends Phaser.Scene {
         const zoomDelta = delta > 0 ? (1 - speed) : (1 + speed);
         const zoomAfter = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomBefore * zoomDelta));
         cam.zoom = zoomAfter;
-        cam.scrollX += (cx - cam.width * 0.5) * (1 / zoomBefore - 1 / zoomAfter);
-        cam.scrollY += (cy - cam.height * 0.5) * (1 / zoomBefore - 1 / zoomAfter);
+        // Keep the world point under the cursor fixed:
+        //   worldX = scrollX + cx/zoom  (before == after)
+        //   → scrollX_delta = cx * (1/zoomBefore - 1/zoomAfter)
+        cam.scrollX += cx * (1 / zoomBefore - 1 / zoomAfter);
+        cam.scrollY += cy * (1 / zoomBefore - 1 / zoomAfter);
       };
 
       if (e.ctrlKey) {
@@ -435,14 +438,14 @@ export class MapScene extends Phaser.Scene {
       }
     }
 
-    // Soft camera clamping — keep map center reachable but allow edge panning at any zoom
+    // Soft camera clamping — allow the map edge to reach the viewport center,
+    // plus a half-viewport of overscroll so every map pixel is reachable.
     const viewW = cam.width / cam.zoom;
     const viewH = cam.height / cam.zoom;
-    const margin = 100; // pixels of world space past the map edge
-    const minX = -viewW / 2 - margin;
-    const minY = -viewH / 2 - margin;
-    const maxX = MAP_SIZE - viewW / 2 + margin;
-    const maxY = MAP_SIZE - viewH / 2 + margin;
+    const minX = -viewW / 2;
+    const minY = -viewH / 2;
+    const maxX = MAP_SIZE - viewW / 2;
+    const maxY = MAP_SIZE - viewH / 2;
     cam.scrollX = Math.max(minX, Math.min(maxX, cam.scrollX));
     cam.scrollY = Math.max(minY, Math.min(maxY, cam.scrollY));
 

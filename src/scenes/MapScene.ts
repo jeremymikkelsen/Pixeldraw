@@ -15,6 +15,8 @@ import { useUIStore } from '../store/uiStore';
 import { loadSprite, type LoadedSprite } from '../generators/SpriteLoader';
 import { FarmRenderer } from '../generators/FarmRenderer';
 import { PastureAnimator } from '../generators/PastureAnimator';
+import { DeerAnimator } from '../generators/DeerAnimator';
+import { FenceRenderer } from '../generators/FenceRenderer';
 
 const MAP_SIZE = 3072;
 const PIXEL_RESOLUTION = 1536;
@@ -58,6 +60,7 @@ export class MapScene extends Phaser.Scene {
   private _coastalRenderer!: CoastalRenderer;
   private _pastureAnimator: PastureAnimator | null = null;
   private _duchyBorderPixels: { idx: number; color: number }[] = [];
+  private _fenceFrontPixels: { idx: number; color: number }[] = [];
 
   // Region hover highlight
   private _regionGrid!: Uint16Array | null;
@@ -464,6 +467,10 @@ export class MapScene extends Phaser.Scene {
         if (this._pastureAnimator) {
           this._pastureAnimator.animate(this._pixels, time);
         }
+        // Restore front fence above cows (bottom fence in 3/4 view)
+        for (const fp of this._fenceFrontPixels) {
+          this._pixels[fp.idx] = fp.color;
+        }
         // Restore building/bridge pixels so they always render above rivers and coast
         for (const bp of this._buildingPixels) {
           this._pixels[bp.idx] = bp.color;
@@ -789,6 +796,18 @@ export class MapScene extends Phaser.Scene {
     mountainRenderer.render(pixels, topo, PIXEL_RESOLUTION, seed, treeMask, season, roadMask);
     this._extrusionMap = mountainRenderer.extrusionMap;
     this._screenToSource = mountainRenderer.screenToSource;
+
+    // Fence rendering — needs extrusionMap, so runs after MountainRenderer.
+    // Back fence (top + side rails + top posts) written into static pixels.
+    // Front fence (bottom rail + bottom posts) captured for per-frame restore above cows.
+    if (farmRenderer.pastures.length > 0) {
+      const fc = new FenceRenderer().render(
+        pixels, farmRenderer.pastures, mountainRenderer.extrusionMap, PIXEL_RESOLUTION,
+      );
+      this._fenceFrontPixels = fc.frontFence;
+    } else {
+      this._fenceFrontPixels = [];
+    }
 
     // River animator (buildingMask set after renderSprites below)
     const riverAnimator = new RiverAnimator(topo, hydro, PIXEL_RESOLUTION, seed, treeMask, renderer.terrainGrid);

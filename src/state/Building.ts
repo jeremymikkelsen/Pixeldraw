@@ -113,6 +113,29 @@ export interface WoodcutterState {
   lumberCount: number;        // cumulative trees cut (drives board stack visuals)
 }
 
+// ─── Iron Mine state ────────────────────────────────────────────────────────
+
+export interface MineState {
+  regionIndex: number;        // high-highland region bordering rock
+  duchyIndex: number;
+  entrancePx: number;         // pixel-space x of mine entrance
+  entrancePy: number;         // pixel-space y of mine entrance
+  rockDirX: number;           // unit vector toward rock/mountain
+  rockDirY: number;
+  oreCount: number;           // cumulative ore mined (drives ore pile visual)
+}
+
+// ─── Smelter state ──────────────────────────────────────────────────────────
+
+export interface SmelterState {
+  regionIndex: number;        // lowland/highland in same duchy as mine
+  duchyIndex: number;
+  buildingPx: number;         // pixel-space x of smelter building
+  buildingPy: number;         // pixel-space y of smelter building
+  nearRiver: boolean;         // water-powered bellows (visual difference)
+  ingotCount: number;         // cumulative ingots produced (drives ingot pile visual)
+}
+
 // ─── All building definitions ───────────────────────────────────────────────
 
 export const BUILDING_DEFS: Record<BuildingType, BuildingDef> = {

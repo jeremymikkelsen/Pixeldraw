@@ -27,6 +27,9 @@ export interface SaveData {
   // Woodcutter mutable state (v2+)
   woodcutterLumber?: Record<string, number>;  // duchyIndex → lumberCount
   removedTrees?: number[];                    // pixel indices of felled tree trunks
+  // Mine/smelter mutable state
+  mineOre?: Record<string, number>;           // duchyIndex → oreCount
+  smelterIngots?: Record<string, number>;     // duchyIndex → ingotCount
 }
 
 // ─── Save ───────────────────────────────────────────────────────────────────
@@ -41,6 +44,8 @@ export function saveGame(
   economies: DuchyEconomy[],
   woodcutterLumber?: Record<string, number>,
   removedTrees?: number[],
+  mineOre?: Record<string, number>,
+  smelterIngots?: Record<string, number>,
 ): void {
   const data: SaveData = {
     version: SAVE_VERSION,
@@ -54,6 +59,8 @@ export function saveGame(
     savedAt: new Date().toISOString(),
     woodcutterLumber,
     removedTrees,
+    mineOre,
+    smelterIngots,
   };
 
   try {

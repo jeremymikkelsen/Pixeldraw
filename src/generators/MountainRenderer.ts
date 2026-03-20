@@ -80,6 +80,7 @@ export class MountainRenderer {
   private _snowLine = SNOW_LINE_DEFAULT;
   private _rockLine = ROCK_LINE_DEFAULT;
   private _season: Season = Season.Summer;
+  private _goldNoise: NoiseFunction2D | null = null;
 
   render(
     pixels: Uint32Array,
@@ -97,6 +98,9 @@ export class MountainRenderer {
     const noise = createNoise2D(rngNoise);
     const rngNoise2 = mulberry32(seed ^ 0x1234);
     const noise2 = createNoise2D(rngNoise2);
+    // Gold vein noise — rare flecks in rock terrain (cosmetic, for future prospecting)
+    const goldRng = mulberry32(seed ^ 0x601dface);
+    this._goldNoise = createNoise2D(goldRng);
     const N = resolution;
     this.resolution = N;
     const scale = topo.size / N;
@@ -215,6 +219,19 @@ export class MountainRenderer {
             else if (n > 0.0) rgb = ROCK_LIGHT;
             else if (n > -0.3) rgb = ROCK_MID;
             else rgb = ROCK_DARK;
+            // Rare gold flecks in rock (cosmetic hints for future prospecting)
+            if (this._goldNoise) {
+              const gv = (this._goldNoise(px * 0.25, py * 0.25) + 1) * 0.5;
+              if (gv > 0.985) {
+                const gr = (rgb >> 16) & 0xff;
+                const gg = (rgb >> 8) & 0xff;
+                const gb = rgb & 0xff;
+                // Blend toward gold 0xc8a830 at 40%
+                rgb = (Math.round(gr + (0xc8 - gr) * 0.4) << 16)
+                    | (Math.round(gg + (0xa8 - gg) * 0.4) << 8)
+                    | Math.round(gb + (0x30 - gb) * 0.4);
+              }
+            }
             pixels[i] = applyBrightness(rgb, 1.0);
           }
         }

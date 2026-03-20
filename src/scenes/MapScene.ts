@@ -23,6 +23,10 @@ import { WoodcutterRenderer } from '../generators/WoodcutterRenderer';
 import { WoodcutterAnimator } from '../generators/WoodcutterAnimator';
 import { FishingCampRenderer } from '../generators/FishingCampRenderer';
 import { FishingCampAnimator } from '../generators/FishingCampAnimator';
+import { MineRenderer } from '../generators/MineRenderer';
+import { MineAnimator } from '../generators/MineAnimator';
+import { SmelterRenderer } from '../generators/SmelterRenderer';
+import { SmelterAnimator } from '../generators/SmelterAnimator';
 import { packABGR } from '../generators/TerrainPalettes';
 
 const MAP_SIZE = 3072;
@@ -71,6 +75,8 @@ export class MapScene extends Phaser.Scene {
   private _gardenWorkerAnimator: GardenWorkerAnimator | null = null;
   private _woodcutterAnimator: WoodcutterAnimator | null = null;
   private _fishingCampAnimator: FishingCampAnimator | null = null;
+  private _mineAnimator: MineAnimator | null = null;
+  private _smelterAnimator: SmelterAnimator | null = null;
   private _duchyBorderPixels: { idx: number; color: number }[] = [];
   private _fencePixels: { idx: number; color: number }[] = [];
 
@@ -496,6 +502,12 @@ export class MapScene extends Phaser.Scene {
         if (this._woodcutterAnimator) {
           this._woodcutterAnimator.animate(this._pixels, time);
         }
+        if (this._mineAnimator) {
+          this._mineAnimator.animate(this._pixels, time);
+        }
+        if (this._smelterAnimator) {
+          this._smelterAnimator.animate(this._pixels, time);
+        }
         // Restore building/bridge pixels so they always render above rivers and coast
         for (const bp of this._buildingPixels) {
           this._pixels[bp.idx] = bp.color;
@@ -840,6 +852,24 @@ export class MapScene extends Phaser.Scene {
       if (woodcutterMask[i]) structureMask[i] = 1;
     }
 
+    // Iron mines (before trees so clearing works)
+    const mineRenderer = new MineRenderer();
+    const { mineMask, mineBuildingMask, renderData: mineRenderData } = mineRenderer.render(
+      pixels, PIXEL_RESOLUTION, this._state.mines, seed, season,
+    );
+    for (let i = 0; i < mineMask.length; i++) {
+      if (mineMask[i]) structureMask[i] = 1;
+    }
+
+    // Smelters (before trees so clearing works)
+    const smelterRenderer = new SmelterRenderer();
+    const { smelterMask, smelterBuildingMask, renderData: smelterRenderData } = smelterRenderer.render(
+      pixels, PIXEL_RESOLUTION, this._state.smelters, seed, season,
+    );
+    for (let i = 0; i < smelterMask.length; i++) {
+      if (smelterMask[i]) structureMask[i] = 1;
+    }
+
     // Trees: 3-step pipeline
     // 1. Compute all tree positions (no drawing yet) — needed for woodcutter targeting
     const treeRenderer = new TreeRenderer();
@@ -912,6 +942,13 @@ export class MapScene extends Phaser.Scene {
     // Merge fishing camp mask so static dock/hut pixels persist over river animation
     for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
       if (campMask[bi]) buildingMask[bi] = 1;
+    }
+    // Merge mine/smelter building masks
+    for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
+      if (mineBuildingMask[bi]) buildingMask[bi] = 1;
+    }
+    for (let bi = 0; bi < PIXEL_RESOLUTION * PIXEL_RESOLUTION; bi++) {
+      if (smelterBuildingMask[bi]) buildingMask[bi] = 1;
     }
 
     // Capture building pixel colors NOW (before river animation overwrites them)
@@ -1046,6 +1083,32 @@ export class MapScene extends Phaser.Scene {
       this._fishingCampAnimator = fca;
     } else {
       this._fishingCampAnimator = null;
+    }
+
+    // Mine animator (miner cycle + dust)
+    if (mineRenderData.length > 0) {
+      const duchyColors = this._state.duchies.map(d => {
+        const c = d.house.color;
+        return packABGR((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff);
+      });
+      const ma = new MineAnimator(mineRenderData, PIXEL_RESOLUTION, duchyColors);
+      ma.extrusionMap = mountainRenderer.extrusionMap;
+      this._mineAnimator = ma;
+    } else {
+      this._mineAnimator = null;
+    }
+
+    // Smelter animator (heavy smoke + furnace glow + worker)
+    if (smelterRenderData.length > 0) {
+      const duchyColors = this._state.duchies.map(d => {
+        const c = d.house.color;
+        return packABGR((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff);
+      });
+      const sa = new SmelterAnimator(smelterRenderData, PIXEL_RESOLUTION, duchyColors);
+      sa.extrusionMap = mountainRenderer.extrusionMap;
+      this._smelterAnimator = sa;
+    } else {
+      this._smelterAnimator = null;
     }
 
     // Store refs

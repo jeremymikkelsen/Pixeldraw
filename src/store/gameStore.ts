@@ -109,6 +109,19 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
         woodcutterLumber[String(di)] = wc.lumberCount;
       }
     }
+    // Serialize mine/smelter counts
+    const mineOre: Record<string, number> = {};
+    if (gameState.mines) {
+      for (const [di, mine] of gameState.mines) {
+        mineOre[String(di)] = mine.oreCount;
+      }
+    }
+    const smelterIngots: Record<string, number> = {};
+    if (gameState.smelters) {
+      for (const [di, smelter] of gameState.smelters) {
+        smelterIngots[String(di)] = smelter.ingotCount;
+      }
+    }
     persistSave(
       gameState.seed,
       gameState.mapSize,
@@ -119,6 +132,8 @@ export const useGameStore = create<GameStoreState>((set, get) => ({
       gameState.economies,
       woodcutterLumber,
       gameState.removedTrees ? Array.from(gameState.removedTrees) : [],
+      mineOre,
+      smelterIngots,
     );
     set({ hasSave: true });
   },

@@ -13,9 +13,11 @@ import { DuchyEconomy, createDuchyEconomy, processEconomyTurn, countTerrain } fr
 import type { SaveData } from './SaveLoad';
 import { AgImprovementType, assignAgImprovements } from './AgImprovements';
 import { KingData, selectKing } from './King';
-import type { WoodcutterState, FishingCampState } from './Building';
+import type { WoodcutterState, FishingCampState, MineState, SmelterState } from './Building';
 import { assignWoodcutters } from './WoodcutterAssignment';
 import { assignFishingCamps } from './FishingCampAssignment';
+import { assignMines } from './MineAssignment';
+import { assignSmelters } from './SmelterAssignment';
 
 export interface GameState {
   seed: number;
@@ -47,6 +49,10 @@ export interface GameState {
   woodcutters: Map<number, WoodcutterState>;
   // Fishing camps — one per duchy (duchyIndex → state)
   fishingCamps: Map<number, FishingCampState>;
+  // Iron mines — some duchies only (duchyIndex → state)
+  mines: Map<number, MineState>;
+  // Smelters — only duchies with mines (duchyIndex → state)
+  smelters: Map<number, SmelterState>;
   // Tree trunk positions permanently removed by woodcutters (pixel indices: y * N + x)
   removedTrees: Set<number>;
 }
@@ -67,6 +73,8 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
   const king = selectKing(seed);
   const woodcutters = assignWoodcutters(topo, hydro, duchies, seed, PIXEL_RESOLUTION, roads, agImprovements);
   const fishingCamps = assignFishingCamps(topo, hydro, duchies, seed, PIXEL_RESOLUTION);
+  const mines = assignMines(topo, hydro, duchies, seed, PIXEL_RESOLUTION, roads, agImprovements);
+  const smelters = assignSmelters(topo, hydro, duchies, seed, PIXEL_RESOLUTION, mines, roads, agImprovements);
 
   // Initialize economies for each duchy
   const economies = duchies.map(() => createDuchyEconomy(50));
@@ -88,6 +96,8 @@ export function createGameState(seed: number, mapSize: number, playerHouse: numb
     economies,
     woodcutters,
     fishingCamps,
+    mines,
+    smelters,
     removedTrees: new Set(),
   };
 }
@@ -105,12 +115,28 @@ export function loadGameState(save: SaveData): GameState {
   const king = selectKing(save.seed);
   const woodcutters = assignWoodcutters(topo, hydro, duchies, save.seed, PIXEL_RESOLUTION, roads, agImprovements);
   const fishingCamps = assignFishingCamps(topo, hydro, duchies, save.seed, PIXEL_RESOLUTION);
+  const mines = assignMines(topo, hydro, duchies, save.seed, PIXEL_RESOLUTION, roads, agImprovements);
+  const smelters = assignSmelters(topo, hydro, duchies, save.seed, PIXEL_RESOLUTION, mines, roads, agImprovements);
 
   // Restore mutable woodcutter state from save
   if (save.woodcutterLumber) {
     for (const [diStr, count] of Object.entries(save.woodcutterLumber)) {
       const wc = woodcutters.get(Number(diStr));
       if (wc) wc.lumberCount = count as number;
+    }
+  }
+
+  // Restore mutable mine/smelter state from save
+  if (save.mineOre) {
+    for (const [diStr, count] of Object.entries(save.mineOre)) {
+      const mine = mines.get(Number(diStr));
+      if (mine) mine.oreCount = count as number;
+    }
+  }
+  if (save.smelterIngots) {
+    for (const [diStr, count] of Object.entries(save.smelterIngots)) {
+      const smelter = smelters.get(Number(diStr));
+      if (smelter) smelter.ingotCount = count as number;
     }
   }
 
@@ -131,6 +157,8 @@ export function loadGameState(save: SaveData): GameState {
     economies: save.economies,
     woodcutters,
     fishingCamps,
+    mines,
+    smelters,
     removedTrees: new Set(save.removedTrees ?? []),
   };
 }
@@ -160,6 +188,22 @@ export function advanceTurn(state: GameState): void {
       wc.lumberCount += treesPerSeason;
       const timberYield = wc.variant === 'sawmill' ? 5 : 1;
       state.economies[i].resources.timber += timberYield;
+    }
+
+    // Mine ore production
+    const mine = state.mines.get(i);
+    if (mine) {
+      mine.oreCount += 4;
+      state.economies[i].resources.ore += 4;
+    }
+
+    // Smelter iron production (consumes ore)
+    const smelter = state.smelters.get(i);
+    if (smelter && mine) {
+      const consumed = Math.min(2, state.economies[i].resources.ore);
+      state.economies[i].resources.ore -= consumed;
+      smelter.ingotCount += consumed;
+      state.economies[i].resources.iron += consumed;
     }
   }
 }
